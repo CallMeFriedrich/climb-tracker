@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Climb Tracker – Community</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <div class="title">Climb Tracker</div>
+        <div class="subtitle">Community</div>
+      </div>
+
+      <div class="nav">
+        <a class="pill" href="index.html">Dashboard</a>
+        <a class="pill" href="goals.html">Ziele</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Alle Nutzer</h2>
+      <p class="muted">Du kannst Ziele und Logbuch von jedem Benutzer ansehen.</p>
+      <div class="divider"></div>
+
+      <div id="users" class="user-list"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    initCommunity();
+  </script>
+</body>
+</html>

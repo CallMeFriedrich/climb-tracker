@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Climb Tracker – Dashboard</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <div class="title">Climb Tracker</div>
+        <div class="subtitle">Dashboard</div>
+      </div>
+
+      <div class="nav">
+        <a class="pill" href="goals.html">Ziele</a>
+        <a class="pill" href="community.html">Community</a>
+        <button class="btn btn-ghost" id="logoutBtn" type="button">Logout</button>
+        <button class="btn btn-danger" id="resetBtn" type="button" style="display:none;">Admin Reset</button>
+      </div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card">
+        <h2>Ich habe geschafft</h2>
+        <p class="muted">Trage ein, was du geklettert hast. Es wird automatisch gegen deine Ziele gerechnet.</p>
+        <div class="divider"></div>
+
+        <form id="logForm" class="form">
+          <div class="field">
+            <label for="cat">Kategorie</label>
+            <select name="category" id="cat">
+              <option value="lead">Lead</option>
+              <option value="boulder">Boulder</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="grade">Schwierigkeit</label>
+            <select name="grade" id="grade"></select>
+          </div>
+
+          <div class="field">
+            <label for="count">Anzahl</label>
+            <input id="count" name="count" type="number" min="1" value="1" required />
+          </div>
+
+          <div class="field">
+            <label for="notes">Notiz</label>
+            <input id="notes" name="notes" maxlength="500" placeholder="optional" />
+          </div>
+
+          <button class="btn btn-primary" type="submit">Speichern</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Fortschritt gegen Ziele</h2>
+        <p class="muted">X/Y = geschafft/gesetzt</p>
+        <div class="divider"></div>
+
+        <div id="progress" class="list"></div>
+      </div>
+
+      <div class="card" style="grid-column: 1 / -1;">
+        <h2>Mein Logbuch</h2>
+        <p class="muted">Letzte 50 Einträge</p>
+        <div class="divider"></div>
+
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    initDashboard();
+  </script>
+</body>
+</html>

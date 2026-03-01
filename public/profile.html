@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Climb Tracker – Profil</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <div class="title">Climb Tracker</div>
+        <div class="subtitle" id="subtitle">Profil</div>
+      </div>
+
+      <div class="nav">
+        <a class="pill" href="community.html">Zurück</a>
+        <a class="pill" href="index.html">Dashboard</a>
+        <a class="pill" href="goals.html">Ziele</a>
+      </div>
+    </div>
+
+    <!-- Admin Aktionen: volle Breite, nur sichtbar für Admin -->
+    <div class="card" id="adminCard" style="display:none; margin-bottom:16px;">
+      <h2>Admin Aktionen</h2>
+      <p class="muted">Diese Aktionen betreffen den ausgewählten Benutzer.</p>
+      <div class="divider"></div>
+
+      <div class="grid cols-2" style="gap:12px;">
+        <div class="card" style="padding:12px;">
+          <h2>Benutzer zurücksetzen</h2>
+          <p class="muted">Löscht Ziele + Logbuch dieses Benutzers.</p>
+          <button class="btn btn-danger" id="resetUserBtn" type="button">User Reset</button>
+        </div>
+
+        <div class="card" style="padding:12px;">
+          <h2>Passwort zurücksetzen</h2>
+          <p class="muted">Setzt ein neues Passwort für diesen Benutzer.</p>
+
+          <div class="form">
+            <div class="field">
+              <label for="newPw">Neues Passwort</label>
+              <input id="newPw" type="password" minlength="6" placeholder="mind. 6 Zeichen" />
+            </div>
+
+            <button class="btn btn-primary" id="resetPwBtn" type="button">Passwort setzen</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Profil-Inhalt -->
+    <div class="grid cols-2">
+      <div class="card">
+        <h2>Ziele</h2>
+        <p class="muted">Öffentliche Ziele dieses Nutzers</p>
+        <div class="divider"></div>
+        <div id="goals"></div>
+      </div>
+
+      <div class="card">
+        <h2>Logbuch</h2>
+        <p class="muted">Letzte 50 Einträge</p>
+        <div class="divider"></div>
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    initProfile();
+  </script>
+</body>
+</html>

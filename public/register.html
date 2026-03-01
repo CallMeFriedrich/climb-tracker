@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Climb Tracker – Registrieren</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <div class="title">Climb Tracker</div>
+        <div class="subtitle">Registrieren</div>
+      </div>
+
+      <div class="nav">
+        <a class="pill" href="login.html">Login</a>
+      </div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card">
+        <h1>Account erstellen</h1>
+        <p class="muted">Erstelle einen Account, um deine Kletterdaten zu speichern.</p>
+        <div class="divider"></div>
+
+        <form id="f" class="form">
+          <div class="field">
+            <label for="username">Username</label>
+            <input id="username" name="username" placeholder="mind. 3 Zeichen"
+                   autocomplete="username" minlength="3" required />
+          </div>
+
+          <div class="field">
+            <label for="password">Passwort</label>
+            <input id="password" name="password" type="password" placeholder="mind. 6 Zeichen"
+                   autocomplete="new-password" minlength="6" required />
+          </div>
+
+          <button class="btn btn-primary" type="submit">Registrieren</button>
+
+          <div class="muted">
+            Schon registriert?
+            <a href="login.html">Zum Login</a>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Hinweis</h2>
+        <p class="muted">
+          Passwörter werden sicher gehasht gespeichert (nicht im Klartext).
+          Danach kannst du Ziele setzen und dein Logbuch führen.
+        </p>
+
+        <div class="divider"></div>
+
+        <p class="muted">
+          Community: Jeder eingeloggte Nutzer kann Ziele und Logbücher der anderen sehen.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("f").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+
+      const r = await fetch("/api/register", {
+        method: "POST",
+        body: new URLSearchParams(fd)
+      });
+
+      if (r.ok) location.href = "index.html";
+      else alert((await r.json()).error || "Registrierung fehlgeschlagen");
+    });
+  </script>
+</body>
+</html>

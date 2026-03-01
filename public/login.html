@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Climb Tracker – Login</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <div class="title">Climb Tracker</div>
+        <div class="subtitle">Login</div>
+      </div>
+
+      <div class="nav">
+        <a class="pill" href="register.html">Registrieren</a>
+      </div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card">
+        <h1>Willkommen zurück</h1>
+        <p class="muted">Melde dich an, um Dashboard, Ziele und Community zu sehen.</p>
+        <div class="divider"></div>
+
+        <form id="f" class="form">
+          <div class="field">
+            <label for="username">Username</label>
+            <input id="username" name="username" placeholder="z.B. max" autocomplete="username" required />
+          </div>
+
+          <div class="field">
+            <label for="password">Passwort</label>
+            <input id="password" name="password" type="password" placeholder="••••••••"
+                   autocomplete="current-password" required />
+          </div>
+
+          <button class="btn btn-primary" type="submit">Einloggen</button>
+
+          <div class="muted">
+            Noch keinen Account?
+            <a href="register.html">Jetzt registrieren</a>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Info</h2>
+        <p class="muted">
+          Deine Einträge und Ziele werden in einer Datenbank gespeichert und bleiben auch nach
+          Server-Neustarts erhalten.
+        </p>
+
+        <div class="divider"></div>
+
+        <p class="muted">
+          
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("f").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+
+      const r = await fetch("/api/login", {
+        method: "POST",
+        body: new URLSearchParams(fd)
+      });
+
+      if (r.ok) location.href = "index.html";
+      else alert((await r.json()).error || "Login fehlgeschlagen");
+    });
+  </script>
+</body>
+</html>
