@@ -132,7 +132,7 @@ app.get("/api/users", requireAuth, (req, res) => {
 // -------------------- Goals --------------------
 app.get("/api/goals/me", requireAuth, (req, res) => {
   const rows = db.prepare(
-    "SELECT category, grade, target_count FROM goals WHERE user_id=?"
+    "SELECT category, grade, target_count FROM goals WHERE user_id=? AND target_count > 0"
   ).all(currentUserId(req));
 
   res.json({ goals: rows, leadGrades: LEAD_GRADES, boulderGrades: BOULDER_GRADES });
@@ -175,7 +175,7 @@ app.get("/api/goals/user/:id", requireAuth, (req, res) => {
   if (!Number.isInteger(userId)) return res.status(400).json({ error: "Bad user id" });
 
   const rows = db.prepare(
-    "SELECT category, grade, target_count FROM goals WHERE user_id=?"
+    "SELECT category, grade, target_count FROM goals WHERE user_id=? AND target_count > 0"
   ).all(userId);
 
   res.json({ goals: rows });
