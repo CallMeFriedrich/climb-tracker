@@ -12,6 +12,7 @@ RUN npm ci --omit=dev
 COPY server.js ./
 COPY db ./db
 COPY public ./public
+COPY scripts ./scripts
 
 RUN mkdir -p /app/data
 
