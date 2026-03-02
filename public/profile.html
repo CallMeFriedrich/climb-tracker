@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="de">
 <head>
-<link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <meta charset="utf-8" />
@@ -9,7 +9,6 @@
   <title>Climb Tracker – Profil</title>
   <link rel="stylesheet" href="app.css" />
 </head>
-
 <body>
   <div class="container">
     <div class="topbar">
@@ -17,7 +16,6 @@
         <div class="title">Climb Tracker</div>
         <div class="subtitle" id="subtitle">Profil</div>
       </div>
-
       <div class="nav">
         <a class="pill" href="community.html">Zurück</a>
         <a class="pill" href="index.html">Dashboard</a>
@@ -25,36 +23,108 @@
       </div>
     </div>
 
-    <!-- Admin Aktionen: volle Breite, nur sichtbar für Admin -->
-    <div class="card" id="adminCard" style="display:none; margin-bottom:16px;">
+    <!-- Self actions: only visible on own profile -->
+    <div class="card" id="selfActions" style="display:none; margin-bottom:16px;">
+      <h2>Mein Account</h2>
+      <p class="muted">Nur du kannst deinen Namen, dein Passwort oder deinen Account ändern.</p>
+      <div class="divider"></div>
+      <div class="grid cols-2" style="gap:12px;">
+        <div class="card" style="padding:12px;">
+          <h2>Name ändern</h2>
+          <p class="muted">Username muss mind. 3 Zeichen lang sein.</p>
+          <div class="form">
+            <div class="field">
+              <label for="newUsername">Neuer Username</label>
+              <input id="newUsername" type="text" minlength="3"/>
+            </div>
+            <button class="btn btn-primary" id="saveUsername" type="button">Speichern</button>
+          </div>
+        </div>
+        <div class="card" style="padding:12px;">
+          <h2>Passwort ändern</h2>
+          <p class="muted">Neues Passwort mind. 6 Zeichen.</p>
+          <div class="form">
+            <div class="field">
+              <label for="oldPassword">Altes Passwort</label>
+              <input id="oldPassword" type="password" placeholder="aktuelles Passwort" />
+            </div>
+            <div class="field">
+              <label for="newPassword">Neues Passwort</label>
+              <input id="newPassword" type="password" minlength="6" placeholder="mind. 6 Zeichen" />
+            </div>
+            <button class="btn btn-primary" id="savePassword" type="button">Passwort speichern</button>
+          </div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="card" style="padding:12px;">
+        <h2>Account löschen</h2>
+        <p class="muted">Löscht deinen User inkl. Ziele & Logbuch. Nicht rückgängig zu machen.</p>
+        <button class="btn btn-danger" id="deleteMe" type="button">Account löschen</button>
+      </div>
+    </div>
+
+    <!-- Admin actions: only visible for admin on other user's profile -->
+    <div class="card" id="adminActions" style="display:none; margin-bottom:16px;">
       <h2>Admin Aktionen</h2>
       <p class="muted">Diese Aktionen betreffen den ausgewählten Benutzer.</p>
       <div class="divider"></div>
-
       <div class="grid cols-2" style="gap:12px;">
         <div class="card" style="padding:12px;">
           <h2>Benutzer zurücksetzen</h2>
           <p class="muted">Löscht Ziele + Logbuch dieses Benutzers.</p>
-          <button class="btn btn-danger" id="resetUserBtn" type="button">User Reset</button>
+          <button class="btn btn-danger" id="userResetBtn" type="button">User Reset</button>
         </div>
-
         <div class="card" style="padding:12px;">
-          <h2>Passwort zurücksetzen</h2>
+          <h2>Passwort setzen</h2>
           <p class="muted">Setzt ein neues Passwort für diesen Benutzer.</p>
-
           <div class="form">
             <div class="field">
-              <label for="newPw">Neues Passwort</label>
-              <input id="newPw" type="password" minlength="6" placeholder="mind. 6 Zeichen" />
+              <label for="adminNewPassword">Neues Passwort</label>
+              <input id="adminNewPassword" type="password" minlength="6" placeholder="mind. 6 Zeichen" />
             </div>
-
-            <button class="btn btn-primary" id="resetPwBtn" type="button">Passwort setzen</button>
+            <button class="btn btn-primary" id="adminSetPassword" type="button">Passwort setzen</button>
           </div>
+        </div>
+        <div class="card" style="padding:12px;">
+          <h2>Username ändern</h2>
+          <p class="muted">Ändert den Namen dieses Benutzers.</p>
+          <div class="form">
+            <div class="field">
+              <label for="adminNewUsername">Neuer Username</label>
+              <input id="adminNewUsername" type="text" minlength="3" placeholder="mind. 3 Zeichen" />
+            </div>
+            <button class="btn btn-primary" id="adminRename" type="button">Umbenennen</button>
+          </div>
+        </div>
+        <div class="card" style="padding:12px;">
+          <h2>Benutzer löschen</h2>
+          <p class="muted">Löscht den Benutzer inkl. Ziele & Logbuch. Nicht rückgängig zu machen.</p>
+          <button class="btn btn-danger" id="adminDelete" type="button">User löschen</button>
         </div>
       </div>
     </div>
 
-    <!-- Profil-Inhalt -->
+    <!-- Bio: für alle sichtbar -->
+    <div class="card" style="margin-bottom:16px;">
+      <h2>Bio</h2>
+      <p class="muted">Öffentlicher Text</p>
+      <div class="divider"></div>
+      <!-- Anzeige (für alle) -->
+      <div id="bioText" class="muted">Lädt…</div>
+      <!-- Bearbeiten (nur für mich selbst; wird per JS eingeblendet) -->
+      <div id="bioEdit" style="display:none; margin-top:12px;">
+        <div class="form">
+          <div class="field">
+            <label for="bioInput">Deine Bio</label>
+            <textarea id="bioInput" rows="4" maxlength="500"
+              placeholder="Schreib etwas über dich…"></textarea>
+          </div>
+          <button class="btn btn-primary" id="saveBioBtn" type="button">Bio speichern</button>
+        </div>
+      </div>
+    </div>
+
     <div class="grid cols-2">
       <div class="card">
         <h2>Ziele</h2>
@@ -65,7 +135,7 @@
 
       <div class="card">
         <h2>Logbuch</h2>
-        <p class="muted">Letzte 50 Einträge</p>
+        <p class="muted">Letzte 50 Einträge (inkl. Umgebung Indoor/Outdoor)</p>
         <div class="divider"></div>
         <div id="log"></div>
       </div>

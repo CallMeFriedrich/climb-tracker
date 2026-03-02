@@ -23,11 +23,24 @@ function fillGradeSelect(category) {
   }
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 // ---------- Dashboard ----------
 async function initDashboard() {
-  // Admin button logic (requires /api/me with is_admin)
   const meR = await api("/api/me");
   const me = (await meR.json()).me;
+
+  const myProfileBtn = document.getElementById("myProfileBtn");
+  if (myProfileBtn && me) {
+    myProfileBtn.href = `profile.html?id=${me.id}`;
+  }
 
   const logoutBtn = document.getElementById("logoutBtn");
   if (logoutBtn) {
@@ -43,7 +56,6 @@ async function initDashboard() {
     resetBtn.onclick = async () => {
       const ok = confirm("Wirklich ALLE Ziele und ALLE Logbücher von ALLEN Nutzern löschen?");
       if (!ok) return;
-
       const r = await api("/api/admin/reset", { method: "POST" });
       if (r.ok) {
         await loadLog();
@@ -55,28 +67,22 @@ async function initDashboard() {
     };
   }
 
-  // grade list
   fillGradeSelect("lead");
   const cat = document.getElementById("cat");
   if (cat) {
-    cat.addEventListener("change", (e) => {
-      fillGradeSelect(e.target.value);
-    });
+    cat.addEventListener("change", (e) => fillGradeSelect(e.target.value));
   }
 
-  // submit log
   const logForm = document.getElementById("logForm");
   if (logForm) {
     logForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-
       const r = await api("/api/log/me", { method: "POST", body: new URLSearchParams(fd) });
       if (!r.ok) {
         alert((await r.json()).error || "Fehler");
         return;
       }
-
       e.target.reset();
       const countInput = document.querySelector("#logForm input[name=count]");
       if (countInput) countInput.value = 1;
@@ -113,7 +119,6 @@ async function loadProgress() {
       const done = Number(p.done || 0);
       const target = Number(p.target || 0);
       const ok = target > 0 && done >= target;
-
       return `
         <div class="kpi">
           <div>
@@ -145,6 +150,7 @@ async function loadLog() {
           <th>Datum</th>
           <th>Kategorie</th>
           <th>Grad</th>
+          <th>Umgebung</th>
           <th>Anzahl</th>
           <th>Notiz</th>
         </tr>
@@ -155,6 +161,7 @@ async function loadLog() {
             <td>${e.created_at}</td>
             <td>${e.category}</td>
             <td>${e.grade}</td>
+            <td>${escapeHtml(e.environment || "indoor")}</td>
             <td>x${e.count}</td>
             <td>${escapeHtml(e.notes || "")}</td>
           </tr>
@@ -164,27 +171,16 @@ async function loadLog() {
   `;
 }
 
-function escapeHtml(s) {
-  return String(s)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 // ---------- Goals ----------
 async function initGoals() {
   const r = await api("/api/goals/me");
   const data = await r.json();
 
-  // FIX: Map needs [key,value] pairs
   const current = new Map(data.goals.map(g => [`${g.category}:${g.grade}`, g.target_count]));
 
   const leadForm = document.getElementById("leadForm");
   if (leadForm) {
     leadForm.innerHTML = data.leadGrades.map(grade => {
-      // FIX: current.get(...) needs parentheses
       const v = current.get(`lead:${grade}`) ?? 0;
       return `
         <div class="goal-row">
@@ -209,18 +205,10 @@ async function initGoals() {
   }
 
   const saveLeadBtn = document.getElementById("saveLead");
-  if (saveLeadBtn) {
-    saveLeadBtn.onclick = async () => {
-      await saveGoals("lead", leadForm);
-    };
-  }
+  if (saveLeadBtn) saveLeadBtn.onclick = async () => saveGoals("lead", leadForm);
 
   const saveBoulderBtn = document.getElementById("saveBoulder");
-  if (saveBoulderBtn) {
-    saveBoulderBtn.onclick = async () => {
-      await saveGoals("boulder", bForm);
-    };
-  }
+  if (saveBoulderBtn) saveBoulderBtn.onclick = async () => saveGoals("boulder", bForm);
 }
 
 async function saveGoals(category, formEl) {
@@ -243,7 +231,6 @@ async function saveGoals(category, formEl) {
 async function initCommunity() {
   const r = await api("/api/users");
   const data = await r.json();
-
   const el = document.getElementById("users");
   if (!el) return;
 
@@ -264,15 +251,29 @@ async function initProfile() {
   const id = params.get("id");
   if (!id) return;
 
-  // Get username for subtitle
-  const usersR = await api("/api/users");
-  const users = (await usersR.json()).users;
-  const user = users.find(x => String(x.id) === String(id));
+  // who am I?
+  const meR = await api("/api/me");
+  const me = (await meR.json()).me;
+  const isSelf = me && String(me.id) === String(id);
+  const isAdmin = me && me.is_admin === 1;
 
+  // load profile user info (bio etc.)
+  const profR = await api(`/api/profile/user/${id}`);
+  const profData = await profR.json();
+  const profileUser = profData.user;
+
+  // subtitle username
   const subtitle = document.getElementById("subtitle");
-  if (subtitle) subtitle.textContent = user ? `Profil: ${user.username}` : `Profil #${id}`;
+  if (subtitle) subtitle.textContent = profileUser ? `Profil: ${profileUser.username}` : `Profil #${id}`;
 
-  // FIX: template string call must be api(`/...`)
+  // bio view for everyone
+  const bioText = document.getElementById("bioText");
+  if (bioText) {
+    const bio = (profileUser?.bio || "").trim();
+    bioText.textContent = bio.length ? bio : "Keine Bio gesetzt.";
+  }
+
+  // content (goals/log)
   const goalsR = await api(`/api/goals/user/${id}`);
   const goals = (await goalsR.json()).goals;
 
@@ -281,6 +282,167 @@ async function initProfile() {
 
   renderUserGoals(goals);
   renderUserLog(log);
+
+  // -------- Self actions (only when viewing own profile) --------
+  const selfActions = document.getElementById("selfActions");
+  if (selfActions) selfActions.style.display = isSelf ? "block" : "none";
+
+  if (isSelf) {
+    const bioEdit = document.getElementById("bioEdit");
+    if (bioEdit) bioEdit.style.display = "block";
+
+    const bioInput = document.getElementById("bioInput");
+    if (bioInput) bioInput.value = profileUser?.bio || "";
+
+    const saveBioBtn = document.getElementById("saveBioBtn");
+    if (saveBioBtn) {
+      saveBioBtn.onclick = async () => {
+        const bio = document.getElementById("bioInput").value;
+        const r = await api("/api/me/bio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bio })
+        });
+        if (r.ok) {
+          alert("Bio gespeichert.");
+          location.reload();
+        } else {
+          alert((await r.json()).error || "Fehler");
+        }
+      };
+    }
+
+    const saveUsername = document.getElementById("saveUsername");
+    if (saveUsername) {
+      saveUsername.onclick = async () => {
+        const username = document.getElementById("newUsername").value;
+        const r = await api("/api/me/username", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username })
+        });
+        if (r.ok) {
+          alert("Username geändert.");
+          location.reload();
+        } else {
+          alert((await r.json()).error || "Fehler");
+        }
+      };
+    }
+
+    const savePassword = document.getElementById("savePassword");
+    if (savePassword) {
+      savePassword.onclick = async () => {
+        const oldPassword = document.getElementById("oldPassword").value;
+        const newPassword = document.getElementById("newPassword").value;
+
+        const r = await api("/api/me/password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ oldPassword, newPassword })
+        });
+
+        if (r.ok) {
+          alert("Passwort geändert.");
+          document.getElementById("oldPassword").value = "";
+          document.getElementById("newPassword").value = "";
+        } else {
+          alert((await r.json()).error || "Fehler");
+        }
+      };
+    }
+
+    const deleteMe = document.getElementById("deleteMe");
+    if (deleteMe) {
+      deleteMe.onclick = async () => {
+        const ok = confirm("Wirklich deinen Account löschen? Das kann nicht rückgängig gemacht werden.");
+        if (!ok) return;
+
+        const r = await api("/api/me/delete", { method: "POST" });
+        if (r.ok) {
+          location.href = "register.html";
+        } else {
+          alert((await r.json()).error || "Fehler");
+        }
+      };
+    }
+  }
+
+  // -------- Admin actions (admin can manage other users) --------
+  const adminActions = document.getElementById("adminActions");
+  const showAdminActions = isAdmin && !isSelf;
+  if (adminActions) adminActions.style.display = showAdminActions ? "block" : "none";
+
+  if (showAdminActions) {
+    const adminRenameBtn = document.getElementById("adminRename");
+    if (adminRenameBtn) {
+      adminRenameBtn.onclick = async () => {
+        const username = document.getElementById("adminNewUsername").value;
+        const r = await api(`/api/admin/rename-user/${id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username })
+        });
+
+        if (r.ok) {
+          alert("Username geändert.");
+          location.reload();
+        } else {
+          alert((await r.json()).error || "Fehler");
+        }
+      };
+    }
+
+    const adminDeleteBtn = document.getElementById("adminDelete");
+    if (adminDeleteBtn) {
+      adminDeleteBtn.onclick = async () => {
+        const ok = confirm("Wirklich diesen Benutzer löschen? Das kann nicht rückgängig gemacht werden.");
+        if (!ok) return;
+
+        const r = await api(`/api/admin/delete-user/${id}`, { method: "POST" });
+        if (r.ok) {
+          location.href = "community.html";
+        } else {
+          alert((await r.json()).error || "Fehler");
+        }
+      };
+    }
+
+    const userResetBtn = document.getElementById("userResetBtn");
+    if (userResetBtn) {
+      userResetBtn.onclick = async () => {
+        const ok = confirm("Ziele + Logbuch dieses Benutzers wirklich löschen?");
+        if (!ok) return;
+
+        const r = await api(`/api/admin/reset-user/${id}`, { method: "POST" });
+        if (r.ok) {
+          alert("Benutzer zurückgesetzt.");
+          location.reload();
+        } else {
+          alert((await r.json()).error || "Fehler");
+        }
+      };
+    }
+
+    const adminSetPasswordBtn = document.getElementById("adminSetPassword");
+    if (adminSetPasswordBtn) {
+      adminSetPasswordBtn.onclick = async () => {
+        const newPassword = document.getElementById("adminNewPassword").value;
+        const r = await api(`/api/admin/reset-password/${id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ newPassword })
+        });
+
+        if (r.ok) {
+          alert("Passwort gesetzt.");
+          document.getElementById("adminNewPassword").value = "";
+        } else {
+          alert((await r.json()).error || "Fehler");
+        }
+      };
+    }
+  }
 }
 
 function renderUserGoals(goals) {
@@ -309,9 +471,7 @@ function renderUserGoals(goals) {
           <div class="badge">${g.target_count}</div>
         </div>
       `).join("") : `<div class="empty">Keine Lead Ziele.</div>`}
-
       <div class="divider"></div>
-
       <div class="badge">Boulder</div>
       ${boulder.length ? boulder.map(g => `
         <div class="kpi">
@@ -332,6 +492,7 @@ function renderUserLog(entries) {
     return;
   }
 
+  // FIX: Umgebung auch im Profil anzeigen
   el.innerHTML = `
     <table class="table">
       <thead>
@@ -339,6 +500,7 @@ function renderUserLog(entries) {
           <th>Datum</th>
           <th>Kategorie</th>
           <th>Grad</th>
+          <th>Umgebung</th>
           <th>Anzahl</th>
           <th>Notiz</th>
         </tr>
@@ -349,8 +511,52 @@ function renderUserLog(entries) {
             <td>${e.created_at}</td>
             <td>${e.category}</td>
             <td>${e.grade}</td>
+            <td>${escapeHtml(e.environment || "Indoor")}</td>
             <td>x${e.count}</td>
             <td>${escapeHtml(e.notes || "")}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+// ---------- Leaderboard ----------
+async function initWeeklyLeaderboard() {
+  const r = await api("/api/leaderboard/weekly");
+  const data = await r.json();
+
+  const startEl = document.getElementById("start");
+  if (startEl) startEl.textContent = data.startOfWeek;
+
+  const el = document.getElementById("board");
+  if (!el) return;
+
+  const rows = data.rows || [];
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty">Keine Daten.</div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>User</th>
+          <th>Score</th>
+          <th>Lead</th>
+          <th>Boulder</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((u, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td><a href="profile.html?id=${u.user_id}">${escapeHtml(u.username)}</a></td>
+            <td><strong>${u.score ?? 0}</strong></td>
+            <td>${u.lead_count ?? 0}</td>
+            <td>${u.boulder_count ?? 0}</td>
           </tr>
         `).join("")}
       </tbody>

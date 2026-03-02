@@ -20,6 +20,8 @@
       <div class="nav">
         <a class="pill" href="goals.html">Ziele</a>
         <a class="pill" href="community.html">Community</a>
+      	<a class="pill" href="leaderboard.html">Leaderboard</a>
+        <a class="pill" id="myProfileBtn" href="#">Mein Profil</a>
         <button class="btn btn-ghost" id="logoutBtn" type="button">Logout</button>
         <button class="btn btn-danger" id="resetBtn" type="button" style="display:none;">Admin Reset</button>
       </div>
@@ -39,7 +41,13 @@
               <option value="boulder">Boulder</option>
             </select>
           </div>
-
+          <div class="field">
+            <label for="env">Umgebung</label>
+            <select id="env" name="environment">
+              <option value="indoor" selected>Indoor</option>
+              <option value="outdoor">Outdoor</option>
+            </select>
+          </div>
           <div class="field">
             <label for="grade">Schwierigkeit</label>
             <select name="grade" id="grade"></select>

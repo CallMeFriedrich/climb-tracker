@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Climb Tracker – Leaderboard</title>
+  <link rel="stylesheet" href="app.css" />
+
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+</head>
+
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <div class="title">Climb Tracker</div>
+        <div class="subtitle">Weekly Leaderboard</div>
+      </div>
+
+      <div class="nav">
+        <a class="pill" href="index.html">Dashboard</a>
+        <a class="pill" href="goals.html">Ziele</a>
+        <a class="pill" href="community.html">Community</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Diese Woche</h2>
+      <p class="muted">Start der Woche: <span id="start"></span></p>
+      <div class="divider"></div>
+
+      <div id="board"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    initWeeklyLeaderboard();
+  </script>
+</body>
+</html>
