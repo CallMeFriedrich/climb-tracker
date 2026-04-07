@@ -9,6 +9,7 @@ body{
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
+  overflow-x: hidden;
 }
 
 /* ===== COLOR SYSTEM ===== */
@@ -79,6 +80,7 @@ a:hover{ text-decoration:underline; }
   max-width: 960px;
   margin: 0 auto;
   padding: 0 12px 80px;
+  overflow-x: hidden;
 }
 
 /* ===== TOP NAVIGATION ===== */
@@ -161,6 +163,7 @@ a:hover{ text-decoration:underline; }
   border-radius: var(--radius);
   padding: 16px;
   box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 .card h1{
   font-size: 20px;
@@ -286,6 +289,7 @@ input:focus, select:focus, textarea:focus{
 .badge{
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   padding: 3px 10px;
   border-radius: 999px;
   font-size: 12px;
