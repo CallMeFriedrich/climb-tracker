@@ -1,6 +1,10 @@
 /* ===== RESET & BASE ===== */
 *{ box-sizing:border-box; margin:0; padding:0; }
-html{ height:100%; -webkit-text-size-adjust:100%; }
+html{
+  height:100%;
+  -webkit-text-size-adjust:100%;
+  overflow-x: clip;
+}
 
 body{
   min-height:100%;
@@ -9,7 +13,7 @@ body{
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* ===== COLOR SYSTEM ===== */
