@@ -19,10 +19,19 @@ const LEAD_GRADES = [
   "8a","8a+","8b","8b+","8c","8c+","9a"
 ];
 const BOULDER_GRADES = ["1","2","3","4","5","6","7","8","9"];
+const BOULDER_OUTDOOR_GRADES = [
+  "4a","4b","4c","5a","5b","5c",
+  "6a","6a+","6b","6b+","6c","6c+",
+  "7a","7a+","7b","7b+","7c","7c+",
+  "8a","8a+","8b","8b+","8c","8c+","9a"
+];
 
-function isValidGrade(category, grade) {
+function isValidGrade(category, grade, environment) {
   if (category === "lead") return LEAD_GRADES.includes(grade);
-  if (category === "boulder") return BOULDER_GRADES.includes(String(grade));
+  if (category === "boulder") {
+    if (environment === "outdoor") return BOULDER_OUTDOOR_GRADES.includes(grade);
+    return BOULDER_GRADES.includes(String(grade));
+  }
   return false;
 }
 
@@ -38,10 +47,21 @@ const LEAD_WEIGHT = {
 const BOULDER_WEIGHT = {
   "1": 10, "2": 13, "3": 17, "4": 22, "5": 29, "6": 38, "7": 50, "8": 66, "9": 87
 };
+const BOULDER_OUTDOOR_WEIGHT = {
+  "4a": 10, "4b": 11, "4c": 12,
+  "5a": 14, "5b": 16, "5c": 18,
+  "6a": 22, "6a+": 24, "6b": 26, "6b+": 29, "6c": 32, "6c+": 36,
+  "7a": 40, "7a+": 45, "7b": 50, "7b+": 56, "7c": 63, "7c+": 71,
+  "8a": 80, "8a+": 90, "8b": 101, "8b+": 113, "8c": 126, "8c+": 140,
+  "9a": 155
+};
 
-function weightFor(category, grade) {
+function weightFor(category, grade, environment) {
   if (category === "lead") return LEAD_WEIGHT[String(grade)] ?? 0;
-  if (category === "boulder") return BOULDER_WEIGHT[String(grade)] ?? 0;
+  if (category === "boulder") {
+    if (environment === "outdoor") return BOULDER_OUTDOOR_WEIGHT[String(grade)] ?? 0;
+    return BOULDER_WEIGHT[String(grade)] ?? 0;
+  }
   return 0;
 }
 
@@ -248,6 +268,16 @@ app.get("/api/leaderboard/weekly", requireAuth, (req, res) => {
               WHEN '9a' THEN 155
               ELSE 0
             END
+          WHEN l.category='boulder' AND l.environment='outdoor' THEN
+            CASE l.grade
+              WHEN '4a' THEN 10 WHEN '4b' THEN 11 WHEN '4c' THEN 12
+              WHEN '5a' THEN 14 WHEN '5b' THEN 16 WHEN '5c' THEN 18
+              WHEN '6a' THEN 22 WHEN '6a+' THEN 24 WHEN '6b' THEN 26 WHEN '6b+' THEN 29 WHEN '6c' THEN 32 WHEN '6c+' THEN 36
+              WHEN '7a' THEN 40 WHEN '7a+' THEN 45 WHEN '7b' THEN 50 WHEN '7b+' THEN 56 WHEN '7c' THEN 63 WHEN '7c+' THEN 71
+              WHEN '8a' THEN 80 WHEN '8a+' THEN 90 WHEN '8b' THEN 101 WHEN '8b+' THEN 113 WHEN '8c' THEN 126 WHEN '8c+' THEN 140
+              WHEN '9a' THEN 155
+              ELSE 0
+            END
           WHEN l.category='boulder' THEN
             CASE l.grade
               WHEN '1' THEN 10
@@ -280,7 +310,7 @@ app.get("/api/goals/me", requireAuth, (req, res) => {
   const rows = db.prepare(
     "SELECT category, grade, target_count FROM goals WHERE user_id=? AND target_count > 0"
   ).all(currentUserId(req));
-  res.json({ goals: rows, leadGrades: LEAD_GRADES, boulderGrades: BOULDER_GRADES });
+  res.json({ goals: rows, leadGrades: LEAD_GRADES, boulderGrades: BOULDER_GRADES, boulderOutdoorGrades: BOULDER_OUTDOOR_GRADES });
 });
 
 app.post("/api/goals/me", requireAuth, (req, res) => {
@@ -332,7 +362,7 @@ app.post("/api/log/me", requireAuth, (req, res) => {
   const g = String(grade);
   const c = Number(count);
 
-  if (!isValidGrade(category, g)) return res.status(400).json({ error: "Bad grade" });
+  if (!isValidGrade(category, g, env)) return res.status(400).json({ error: "Bad grade" });
   if (!Number.isInteger(c) || c < 1) return res.status(400).json({ error: "Bad count" });
 
   db.prepare(

@@ -38,6 +38,14 @@
         </div>
 
         <div class="field">
+          <label for="env">Umgebung</label>
+          <select id="env" name="environment">
+            <option value="indoor" selected>Indoor</option>
+            <option value="outdoor">Outdoor</option>
+          </select>
+        </div>
+
+        <div class="field">
           <label for="grade">Schwierigkeit</label>
           <select name="grade" id="grade"></select>
         </div>
@@ -45,13 +53,6 @@
         <span class="expand-link" id="expandExtras">Mehr Optionen</span>
 
         <div id="extraFields" class="extra-fields">
-          <div class="field">
-            <label for="env">Umgebung</label>
-            <select id="env" name="environment">
-              <option value="indoor" selected>Indoor</option>
-              <option value="outdoor">Outdoor</option>
-            </select>
-          </div>
           <div class="field">
             <label for="count">Anzahl</label>
             <input id="count" name="count" type="number" min="1" value="1" required />

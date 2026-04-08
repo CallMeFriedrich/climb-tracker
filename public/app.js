@@ -4,18 +4,21 @@ async function api(url, options) {
   return r;
 }
 
-function gradesFor(category) {
+function gradesFor(category, environment) {
   if (category === "lead") {
+    return ["4a","4b","4c","5a","5b","5c","6a","6a+","6b","6b+","6c","6c+","7a","7a+","7b","7b+","7c","7c+","8a","8a+","8b","8b+","8c","8c+","9a"];
+  }
+  if (category === "boulder" && environment === "outdoor") {
     return ["4a","4b","4c","5a","5b","5c","6a","6a+","6b","6b+","6c","6c+","7a","7a+","7b","7b+","7c","7c+","8a","8a+","8b","8b+","8c","8c+","9a"];
   }
   return ["1","2","3","4","5","6","7","8","9"];
 }
 
-function fillGradeSelect(category, selectedGrade) {
+function fillGradeSelect(category, selectedGrade, environment) {
   const sel = document.getElementById("grade");
   if (!sel) return;
   sel.innerHTML = "";
-  for (const g of gradesFor(category)) {
+  for (const g of gradesFor(category, environment)) {
     const o = document.createElement("option");
     o.value = g;
     o.textContent = g;
@@ -109,6 +112,11 @@ async function initDashboard() {
 function initQuickLog() {
   const last = getLastChoice();
   let currentCat = last.category;
+  const envSelect = document.getElementById("env");
+
+  function currentEnv() {
+    return envSelect ? envSelect.value : "indoor";
+  }
 
   // Toggle buttons
   const toggleBtns = document.querySelectorAll(".toggle-btn[data-cat]");
@@ -118,12 +126,20 @@ function initQuickLog() {
       toggleBtns.forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       currentCat = btn.dataset.cat;
-      fillGradeSelect(currentCat, "");
+      fillGradeSelect(currentCat, "", currentEnv());
       updateSubmitLabel();
     });
   });
 
-  fillGradeSelect(currentCat, last.grade);
+  // Update grades when environment changes
+  if (envSelect) {
+    envSelect.addEventListener("change", () => {
+      fillGradeSelect(currentCat, "", currentEnv());
+      updateSubmitLabel();
+    });
+  }
+
+  fillGradeSelect(currentCat, last.grade, currentEnv());
 
   // Hidden category input
   const catInput = document.getElementById("catValue");
@@ -675,7 +691,7 @@ function renderUserGoals(goals) {
   const lead = goals.filter(g => g.category === "lead")
     .sort((a, b) => String(a.grade).localeCompare(String(b.grade), "de"));
   const boulder = goals.filter(g => g.category === "boulder")
-    .sort((a, b) => Number(a.grade) - Number(b.grade));
+    .sort((a, b) => String(a.grade).localeCompare(String(b.grade), "de"));
 
   el.innerHTML = `
     <div class="list">
