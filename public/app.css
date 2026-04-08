@@ -456,3 +456,194 @@ input:focus, select:focus, textarea:focus{
     transform: scale(0.99);
   }
 }
+
+/* ===== TOGGLE BUTTONS (Lead/Boulder) ===== */
+.toggle-group{
+  display: flex;
+  gap: 0;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  border: 1.5px solid var(--border);
+}
+.toggle-btn{
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--text-secondary);
+  border: none;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.toggle-btn.active{
+  background: var(--accent);
+  color: #fff;
+}
+.toggle-btn:not(.active):hover{
+  background: var(--accent-subtle);
+}
+
+/* ===== EXTRA FIELDS (collapsible) ===== */
+.extra-fields{ display: none; }
+.extra-fields.visible{ display: grid; gap: 12px; }
+.expand-link{
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.expand-link:hover{ text-decoration: underline; }
+
+/* ===== STATUS GRID ===== */
+.status-grid{
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+@media (min-width: 480px){
+  .status-grid{ grid-template-columns: repeat(4, 1fr); }
+}
+.status-item{
+  padding: 10px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  text-align: center;
+}
+.status-value{
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: -0.03em;
+}
+.status-label{
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ===== PROGRESS BAR ===== */
+.progress-bar{
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.progress-fill{
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* ===== TABS ===== */
+.tab-bar{
+  display: flex;
+  gap: 0;
+  border-bottom: 1.5px solid var(--border);
+  margin-bottom: 12px;
+}
+.tab-btn{
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  margin-bottom: -1.5px;
+}
+.tab-btn.active{
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab-content{ display: none; }
+.tab-content.active{ display: block; }
+
+/* ===== TABLE HIGHLIGHT ===== */
+.table tr.highlight{
+  background: var(--accent-subtle);
+}
+.table tr.highlight td{
+  font-weight: 700;
+}
+
+/* ===== COLLAPSIBLE SECTIONS ===== */
+.collapsible-header{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.collapsible-header .chevron{
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+}
+.collapsible-header.open .chevron{
+  transform: rotate(180deg);
+}
+.collapsible-body{
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+.collapsible-body.open{
+  max-height: 2000px;
+}
+
+/* ===== MOBILE LOG CARDS ===== */
+.log-cards{ display: none; }
+.log-table-wrap{ display: block; }
+
+@media (max-width: 639px){
+  .log-cards{ display: grid; gap: 8px; }
+  .log-table-wrap{ display: none; }
+}
+
+.log-card{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.log-card .log-main{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.log-card .log-grade{
+  font-weight: 700;
+  font-size: 14px;
+}
+.log-card .log-detail{
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-card .log-count{
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent);
+}

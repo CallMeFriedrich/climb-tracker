@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="de">
 <head>
-<link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <meta charset="utf-8" />
@@ -16,31 +16,35 @@
         <div class="title">Climb Tracker</div>
         <div class="subtitle">Dashboard</div>
       </div>
-
       <div class="nav">
-        <a class="pill" href="goals.html">Ziele</a>
         <a class="pill" href="community.html">Community</a>
-      	<a class="pill" href="leaderboard.html">Leaderboard</a>
         <a class="pill" id="myProfileBtn" href="#">Mein Profil</a>
         <button class="btn btn-ghost" id="logoutBtn" type="button">Logout</button>
         <button class="btn btn-danger" id="resetBtn" type="button" style="display:none;">Admin Reset</button>
       </div>
     </div>
 
-    <div class="grid cols-2">
-      <div class="card">
-        <h2>Ich habe geschafft</h2>
-        <p class="muted">Trage ein, was du geklettert hast. Es wird automatisch gegen deine Ziele gerechnet.</p>
-        <div class="divider"></div>
+    <!-- Quick Log -->
+    <div class="card" style="margin-bottom:12px;">
+      <h2>Eintragen</h2>
+      <div class="divider"></div>
 
-        <form id="logForm" class="form">
-          <div class="field">
-            <label for="cat">Kategorie</label>
-            <select name="category" id="cat">
-              <option value="lead">Lead</option>
-              <option value="boulder">Boulder</option>
-            </select>
-          </div>
+      <form id="logForm" class="form">
+        <input type="hidden" name="category" id="catValue" value="lead" />
+
+        <div class="toggle-group">
+          <button type="button" class="toggle-btn" data-cat="lead">Lead</button>
+          <button type="button" class="toggle-btn" data-cat="boulder">Boulder</button>
+        </div>
+
+        <div class="field">
+          <label for="grade">Schwierigkeit</label>
+          <select name="grade" id="grade"></select>
+        </div>
+
+        <span class="expand-link" id="expandExtras">Mehr Optionen</span>
+
+        <div id="extraFields" class="extra-fields">
           <div class="field">
             <label for="env">Umgebung</label>
             <select id="env" name="environment">
@@ -49,43 +53,54 @@
             </select>
           </div>
           <div class="field">
-            <label for="grade">Schwierigkeit</label>
-            <select name="grade" id="grade"></select>
-          </div>
-
-          <div class="field">
             <label for="count">Anzahl</label>
             <input id="count" name="count" type="number" min="1" value="1" required />
           </div>
-
           <div class="field">
             <label for="notes">Notiz</label>
             <input id="notes" name="notes" maxlength="500" placeholder="optional" />
           </div>
+        </div>
 
-          <button class="btn btn-primary" type="submit">Speichern</button>
-        </form>
-      </div>
+        <button class="btn btn-primary" type="submit" id="submitLog">Speichern</button>
+      </form>
+    </div>
 
+    <!-- Status -->
+    <div class="card" style="margin-bottom:12px;">
+      <h2>Diese Woche</h2>
+      <div class="divider"></div>
+      <div id="statusCard"></div>
+    </div>
+
+    <div class="grid cols-2">
+      <!-- Progress -->
       <div class="card">
-        <h2>Fortschritt gegen Ziele</h2>
+        <h2>Fortschritt</h2>
         <p class="muted">X/Y = geschafft/gesetzt</p>
         <div class="divider"></div>
-
         <div id="progress" class="list"></div>
       </div>
 
+      <!-- Inline Goals -->
+      <div class="card">
+        <h2>Ziele bearbeiten</h2>
+        <p class="muted">Setze Ziele pro Schwierigkeit</p>
+        <div class="divider"></div>
+        <div id="inlineGoals"></div>
+      </div>
+
+      <!-- Logbook -->
       <div class="card" style="grid-column: 1 / -1;">
-        <h2>Mein Logbuch</h2>
+        <h2>Logbuch</h2>
         <p class="muted">Letzte 50 Einträge</p>
         <div class="divider"></div>
-
         <div id="log"></div>
       </div>
     </div>
   </div>
 
-  <script src="app.js?v=2026-04-07"></script>
+  <script src="app.js?v=2026-04-07b"></script>
   <script>
     initDashboard();
   </script>
