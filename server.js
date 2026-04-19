@@ -5,6 +5,7 @@ const express = require("express");
 const session = require("express-session");
 const bcrypt = require("bcrypt");
 const Database = require("better-sqlite3");
+const SqliteStore = require("better-sqlite3-session-store")(session);
 const app = express();
 
 // -------------------- Config --------------------
@@ -99,12 +100,15 @@ try {
 // -------------------- Middlewares --------------------
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+const sessionDb = new Database(path.join(__dirname, "data", "sessions.db"));
 app.use(session({
   secret: process.env.SESSION_SECRET || "CHANGE_ME_TO_A_LONG_RANDOM_SECRET",
   resave: false,
   saveUninitialized: false,
+  store: new SqliteStore({ client: sessionDb }),
   cookie: {
     httpOnly: true,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Tage
     // secure: true, // enable when using HTTPS
     // sameSite: "lax"
   }

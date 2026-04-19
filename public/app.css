@@ -104,6 +104,11 @@ a:hover{ text-decoration:underline; }
   align-items: center;
   gap: 8px;
   padding: 10px 0;
+  text-decoration: none;
+  cursor: pointer;
+}
+a.brand:hover .title{
+  opacity: 0.8;
 }
 .brand .title{
   font-size: 17px;
