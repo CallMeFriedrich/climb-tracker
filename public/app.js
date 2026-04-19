@@ -546,12 +546,19 @@ async function initProfile() {
     bioText.textContent = bio.length ? bio : "Keine Bio gesetzt.";
   }
 
-  const goalsR = await api(`/api/goals/user/${id}`);
+  const [goalsR, progressR, logR] = await Promise.all([
+    api(`/api/goals/user/${id}`),
+    api(`/api/progress/user/${id}`),
+    api(`/api/log/user/${id}`)
+  ]);
   const goals = (await goalsR.json()).goals;
-  const logR = await api(`/api/log/user/${id}`);
+  const progress = (await progressR.json()).progress || [];
   const log = (await logR.json()).entries;
 
-  renderUserGoals(goals);
+  const doneMap = {};
+  for (const p of progress) doneMap[`${p.category}:${p.grade}`] = p.done;
+
+  renderUserGoals(goals, doneMap);
   renderUserLog(log);
 
   // Self actions
@@ -679,7 +686,7 @@ async function initProfile() {
   }
 }
 
-function renderUserGoals(goals) {
+function renderUserGoals(goals, doneMap = {}) {
   const el = document.getElementById("goals");
   if (!el) return;
 
@@ -693,23 +700,26 @@ function renderUserGoals(goals) {
   const boulder = goals.filter(g => g.category === "boulder")
     .sort((a, b) => String(a.grade).localeCompare(String(b.grade), "de"));
 
+  function goalRow(g) {
+    const done = doneMap[`${g.category}:${g.grade}`] || 0;
+    const pct = Math.min(100, Math.round((done / g.target_count) * 100));
+    const badgeClass = done >= g.target_count ? "badge badge-success" : "badge";
+    return `
+      <div class="kpi">
+        <div><strong>${g.grade}</strong><div class="muted">Fortschritt</div></div>
+        <div class="${badgeClass}">${done}/${g.target_count}</div>
+      </div>
+      <div class="progress-bar" style="margin:-6px 0 6px;"><div class="progress-fill" style="width:${pct}%"></div></div>
+    `;
+  }
+
   el.innerHTML = `
     <div class="list">
       <div class="badge">Lead</div>
-      ${lead.length ? lead.map(g => `
-        <div class="kpi">
-          <div><strong>${g.grade}</strong><div class="muted">Ziel</div></div>
-          <div class="badge">${g.target_count}</div>
-        </div>
-      `).join("") : `<div class="empty">Keine Lead Ziele.</div>`}
+      ${lead.length ? lead.map(goalRow).join("") : `<div class="empty">Keine Lead Ziele.</div>`}
       <div class="divider"></div>
       <div class="badge">Boulder</div>
-      ${boulder.length ? boulder.map(g => `
-        <div class="kpi">
-          <div><strong>${g.grade}</strong><div class="muted">Ziel</div></div>
-          <div class="badge">${g.target_count}</div>
-        </div>
-      `).join("") : `<div class="empty">Keine Boulder Ziele.</div>`}
+      ${boulder.length ? boulder.map(goalRow).join("") : `<div class="empty">Keine Boulder Ziele.</div>`}
     </div>
   `;
 }

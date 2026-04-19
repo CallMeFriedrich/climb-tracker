@@ -307,6 +307,10 @@ input:focus, select:focus, textarea:focus{
   color: var(--accent);
   border: 1px solid transparent;
 }
+.badge-success{
+  background: #d1fae5;
+  color: #065f46;
+}
 
 /* ===== GOALS GRID ===== */
 .goals-grid{

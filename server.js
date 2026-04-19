@@ -403,6 +403,37 @@ app.get("/api/log/user/:id", requireAuth, (req, res) => {
 });
 
 // -------------------- Progress (X/Y) --------------------
+app.get("/api/progress/user/:id", requireAuth, (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId)) return res.status(400).json({ error: "Bad user id" });
+
+  const goals = db.prepare(`
+    SELECT category, grade, target_count
+    FROM goals
+    WHERE user_id=?
+  `).all(userId);
+
+  const done = db.prepare(`
+    SELECT category, grade, SUM(count) AS done_count
+    FROM log_entries
+    WHERE user_id=?
+    GROUP BY category, grade
+  `).all(userId);
+
+  const doneMap = new Map(done.map(r => [`${r.category}:${r.grade}`, r.done_count || 0]));
+
+  const progress = goals
+    .map(g => ({
+      category: g.category,
+      grade: g.grade,
+      target: g.target_count,
+      done: doneMap.get(`${g.category}:${g.grade}`) || 0
+    }))
+    .filter(p => p.target > 0);
+
+  res.json({ progress });
+});
+
 app.get("/api/progress/me", requireAuth, (req, res) => {
   const userId = currentUserId(req);
 
