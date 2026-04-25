@@ -118,7 +118,78 @@ function initQuickLog() {
     return envSelect ? envSelect.value : "indoor";
   }
 
-  // Toggle buttons
+  // ---- Ascent style / attempts ----
+  const LEAD_STYLES = [
+    { key: "os",    label: "OS",    desc: "Onsight — erster Versuch, kein Beta, keine Vorinformation." },
+    { key: "flash", label: "Flash", desc: "Flash — erster Versuch mit Beta (Zusehen, Tipps, …)." },
+    { key: "rp",    label: "RP",    desc: "Rotpunkt — sauberer Durchstieg nach mehreren Versuchen." },
+    { key: "pp",    label: "PP",    desc: "Pinkpoint — wie RP, aber Expressschlingen waren vorgehängt." },
+  ];
+  const BOULDER_ATTEMPTS = [
+    { key: "flash", label: "⚡ Flash" },
+    { key: "2",  label: "2" }, { key: "3",  label: "3" },
+    { key: "4",  label: "4" }, { key: "5",  label: "5" },
+    { key: "6",  label: "6" }, { key: "7+", label: "7+" },
+  ];
+
+  const styleBtns  = document.getElementById("styleBtns");
+  const styleDesc  = document.getElementById("styleDesc");
+  const styleInput = document.getElementById("styleInput");
+  const attField   = document.getElementById("attemptsField");
+  const attValue   = document.getElementById("attValue");
+  const attInput   = document.getElementById("attInput");
+  const attMinus   = document.getElementById("attMinus");
+  const attPlus    = document.getElementById("attPlus");
+
+  let currentStyle = "";
+  let currentAttempts = 2;
+
+  function setAttempts(n) {
+    currentAttempts = Math.max(2, n);
+    if (attValue) attValue.textContent = currentAttempts;
+    if (attInput) attInput.value = currentAttempts;
+  }
+
+  if (attMinus) attMinus.addEventListener("click", () => setAttempts(currentAttempts - 1));
+  if (attPlus)  attPlus.addEventListener("click",  () => setAttempts(currentAttempts + 1));
+
+  function renderStyleBtns() {
+    if (!styleBtns) return;
+    const isLead = currentCat === "lead";
+    const items = isLead ? LEAD_STYLES : BOULDER_ATTEMPTS;
+    // Default selection
+    if (!currentStyle || !items.find(i => i.key === currentStyle)) {
+      currentStyle = items[0].key;
+    }
+    styleBtns.innerHTML = items.map(item => `
+      <button type="button" class="style-btn${currentStyle === item.key ? ' active' : ''}"
+              data-style="${item.key}">${item.label}</button>
+    `).join("");
+    if (styleInput) styleInput.value = isLead ? currentStyle : (currentStyle === "flash" ? "flash" : "");
+    // Attempts counter: only for lead RP/PP
+    const needsAttempts = isLead && (currentStyle === "rp" || currentStyle === "pp");
+    if (attField) attField.style.display = needsAttempts ? "" : "none";
+    // Description
+    if (styleDesc && isLead) {
+      const found = LEAD_STYLES.find(s => s.key === currentStyle);
+      styleDesc.textContent = found ? found.desc : "";
+      styleDesc.style.display = found ? "" : "none";
+    } else if (styleDesc) {
+      styleDesc.style.display = "none";
+    }
+    // Wire up buttons
+    styleBtns.querySelectorAll(".style-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        currentStyle = btn.dataset.style;
+        renderStyleBtns();
+        updateSubmitLabel();
+      });
+    });
+  }
+
+  renderStyleBtns();
+
+  // ---- Category toggle ----
   const toggleBtns = document.querySelectorAll(".toggle-btn[data-cat]");
   toggleBtns.forEach(btn => {
     if (btn.dataset.cat === currentCat) btn.classList.add("active");
@@ -126,7 +197,9 @@ function initQuickLog() {
       toggleBtns.forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       currentCat = btn.dataset.cat;
+      currentStyle = ""; // reset
       fillGradeSelect(currentCat, "", currentEnv());
+      renderStyleBtns();
       updateSubmitLabel();
     });
   });
@@ -144,8 +217,6 @@ function initQuickLog() {
   // Hidden category input
   const catInput = document.getElementById("catValue");
   if (catInput) catInput.value = currentCat;
-
-  // Update hidden input on toggle
   toggleBtns.forEach(btn => {
     btn.addEventListener("click", () => {
       if (catInput) catInput.value = btn.dataset.cat;
@@ -169,7 +240,8 @@ function initQuickLog() {
     if (!submitBtn) return;
     const cat = currentCat === "lead" ? "Lead" : "Boulder";
     const grade = gradeSelect ? gradeSelect.value : "";
-    submitBtn.textContent = grade ? `${cat} ${grade} speichern` : `${cat} speichern`;
+    const stylePart = currentStyle && currentStyle !== "" ? ` · ${currentStyle.toUpperCase()}` : "";
+    submitBtn.textContent = grade ? `${cat} ${grade}${stylePart} speichern` : `${cat} speichern`;
   }
   if (gradeSelect) gradeSelect.addEventListener("change", updateSubmitLabel);
   updateSubmitLabel();
@@ -182,6 +254,25 @@ function initQuickLog() {
       const fd = new FormData(e.target);
       fd.set("category", currentCat);
       const grade = fd.get("grade");
+
+      // Set ascent_style and attempts based on category
+      if (currentCat === "boulder") {
+        if (currentStyle === "flash") {
+          fd.set("ascent_style", "flash");
+          fd.set("attempts", "1");
+        } else if (currentStyle && currentStyle !== "") {
+          fd.set("ascent_style", "");
+          fd.set("attempts", currentStyle === "7+" ? "7" : currentStyle);
+        }
+      } else {
+        // lead
+        fd.set("ascent_style", currentStyle || "");
+        if (currentStyle === "rp" || currentStyle === "pp") {
+          fd.set("attempts", String(currentAttempts));
+        } else if (currentStyle === "os" || currentStyle === "flash") {
+          fd.set("attempts", "1");
+        }
+      }
       const r = await api("/api/log/me", { method: "POST", body: new URLSearchParams(fd) });
       if (!r.ok) {
         alert((await r.json()).error || "Fehler");
@@ -293,6 +384,50 @@ function renderProgress(progressData) {
     .join("");
 }
 
+function fmtDate(s) {
+  const d = s ? s.replace("T"," ") : "";
+  const m = d.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  return m ? `${m[3]}.${m[2]}. ${m[4]}:${m[5]}` : d.slice(0,16);
+}
+
+function fmtAscent(e) {
+  // Returns a short badge label for the ascent style/attempts
+  if (!e.ascent_style && !e.attempts) return "";
+  const STYLE_LABELS = { os: "OS", flash: "⚡ Flash", rp: "RP", pp: "PP" };
+  if (e.category === "boulder") {
+    if (e.ascent_style === "flash") return "⚡ Flash";
+    if (e.attempts && Number(e.attempts) > 1) return `${e.attempts} Versuche`;
+    return "";
+  }
+  // lead
+  const label = STYLE_LABELS[e.ascent_style] || "";
+  if ((e.ascent_style === "rp" || e.ascent_style === "pp") && e.attempts > 1) {
+    return `${label} / ${e.attempts}V`;
+  }
+  return label;
+}
+
+function logCardHtml(e, isSelf) {
+  const isOutdoor = e.environment === "outdoor";
+  const ascentLabel = fmtAscent(e);
+  return `
+    <div class="log-card" data-entry-id="${e.id}">
+      <div class="log-main">
+        <div class="log-grade">
+          ${e.category === "lead" ? "Lead" : "Boulder"} ${e.grade}
+          <span class="log-env-badge ${isOutdoor ? 'outdoor' : ''}">${isOutdoor ? 'Outdoor' : 'Indoor'}</span>
+          ${ascentLabel ? `<span class="log-ascent-badge">${ascentLabel}</span>` : ""}
+        </div>
+        <div class="log-detail">${fmtDate(e.created_at)}${e.notes ? " · " + escapeHtml(e.notes) : ""}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <div class="log-count">×${e.count}</div>
+        ${isSelf ? `<button class="btn-delete-entry" data-id="${e.id}" title="Eintrag löschen">✕</button>` : ""}
+      </div>
+    </div>
+  `;
+}
+
 function renderLogbook(logData) {
   const el = document.getElementById("log");
   if (!el) return;
@@ -303,26 +438,9 @@ function renderLogbook(logData) {
     return;
   }
 
-  function fmtDate(s) {
-    // "2026-04-25 10:07:58" → "25.04. 10:07"
-    const d = s ? s.replace("T"," ") : "";
-    const m = d.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-    return m ? `${m[3]}.${m[2]}. ${m[4]}:${m[5]}` : d.slice(0,16);
-  }
-
   el.innerHTML = `
     <div class="log-cards">
-      ${entries.map(e => `
-        <div class="log-card">
-          <div class="log-main">
-            <div class="log-grade">${e.category === "lead" ? "Lead" : "Boulder"} ${e.grade}
-              <span class="log-env-badge ${e.environment === 'outdoor' ? 'outdoor' : ''}">${e.environment === 'outdoor' ? 'Outdoor' : 'Indoor'}</span>
-            </div>
-            <div class="log-detail">${fmtDate(e.created_at)}${e.notes ? " · " + escapeHtml(e.notes) : ""}</div>
-          </div>
-          <div class="log-count">×${e.count}</div>
-        </div>
-      `).join("")}
+      ${entries.map(e => logCardHtml(e)).join("")}
     </div>
   `;
 }
@@ -827,49 +945,17 @@ function renderUserLog(entries, isSelf) {
     return;
   }
 
-  el.innerHTML = `
-    <div class="table-scroll">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Datum</th>
-            <th>Kategorie</th>
-            <th>Grad</th>
-            <th>Umgebung</th>
-            <th>Anzahl</th>
-            <th>Notiz</th>
-            ${isSelf ? `<th class="td-del"></th>` : ""}
-          </tr>
-        </thead>
-        <tbody>
-          ${entries.map(e => `
-            <tr data-entry-id="${e.id}">
-              <td class="td-date">${e.created_at.replace("T"," ").slice(0,16)}</td>
-              <td>${e.category}</td>
-              <td>${e.grade}</td>
-              <td>${escapeHtml(e.environment || "Indoor")}</td>
-              <td>x${e.count}</td>
-              <td>${escapeHtml(e.notes || "")}</td>
-              ${isSelf ? `<td class="td-del"><button class="btn-delete-entry" data-id="${e.id}" title="Eintrag löschen">✕</button></td>` : ""}
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
+  el.innerHTML = `<div class="log-cards">${entries.map(e => logCardHtml(e, isSelf)).join("")}</div>`;
 
   if (isSelf) {
     el.querySelectorAll(".btn-delete-entry").forEach(btn => {
       let confirming = false;
       let resetTimer = null;
-
       btn.addEventListener("click", async () => {
         if (!confirming) {
-          // First click: ask for confirmation
           confirming = true;
           btn.textContent = "Löschen?";
           btn.classList.add("btn-delete-confirm");
-          // Auto-reset after 3 seconds if no second click
           resetTimer = setTimeout(() => {
             confirming = false;
             btn.textContent = "✕";
@@ -877,15 +963,13 @@ function renderUserLog(entries, isSelf) {
           }, 3000);
           return;
         }
-
-        // Second click: actually delete
         clearTimeout(resetTimer);
         const id = btn.dataset.id;
         const r = await api(`/api/log/me/${id}`, { method: "DELETE" });
         if (r.ok) {
-          const row = el.querySelector(`tr[data-entry-id="${id}"]`);
-          if (row) row.remove();
-          if (!el.querySelector("tbody tr")) {
+          const card = el.querySelector(`.log-card[data-entry-id="${id}"]`);
+          if (card) card.remove();
+          if (!el.querySelector(".log-card")) {
             el.innerHTML = `<div class="empty">Keine Logbuch-Einträge.</div>`;
           }
         } else {

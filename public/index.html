@@ -50,6 +50,26 @@
           <select name="grade" id="grade"></select>
         </div>
 
+        <!-- Stil-Auswahl: wird per JS befüllt je nach Lead/Boulder -->
+        <div class="field" id="styleField">
+          <label>Begehungsart</label>
+          <div class="style-btns" id="styleBtns"></div>
+          <p class="style-desc muted" id="styleDesc"></p>
+        </div>
+
+        <!-- Versuchs-Zähler: nur bei RP/PP sichtbar -->
+        <div class="field" id="attemptsField" style="display:none;">
+          <label>Versuche</label>
+          <div class="attempts-stepper">
+            <button type="button" class="stepper-btn" id="attMinus">−</button>
+            <span id="attValue">2</span>
+            <button type="button" class="stepper-btn" id="attPlus">+</button>
+          </div>
+          <input type="hidden" name="attempts" id="attInput" value="2" />
+        </div>
+
+        <input type="hidden" name="ascent_style" id="styleInput" value="" />
+
         <span class="expand-link" id="expandExtras">Mehr Optionen</span>
 
         <div id="extraFields" class="extra-fields">

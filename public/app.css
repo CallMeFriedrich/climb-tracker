@@ -847,3 +847,92 @@ input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:f
   font-size: 12px !important;
   white-space: nowrap;
 }
+
+/* ===== ASCENT STYLE SELECTOR ===== */
+.style-btns{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.style-btn{
+  padding: 8px 14px;
+  border-radius: var(--radius-xs);
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
+.style-btn:hover{
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+.style-btn.active{
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ===== ATTEMPTS STEPPER ===== */
+.attempts-stepper{
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  border: 1.5px solid var(--border);
+  width: fit-content;
+}
+.stepper-btn{
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border: none;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.stepper-btn:hover{
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.stepper-btn:active{
+  background: var(--accent);
+  color: #fff;
+}
+#attValue{
+  min-width: 48px;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text);
+  padding: 0 6px;
+  border-left: 1.5px solid var(--border);
+  border-right: 1.5px solid var(--border);
+  line-height: 42px;
+}
+
+/* ===== LOG ASCENT BADGE ===== */
+.log-ascent-badge{
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  white-space: nowrap;
+}

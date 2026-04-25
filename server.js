@@ -90,6 +90,10 @@ try {
   // ignore if column already exists
 }
 
+// Ensure `ascent_style` and `attempts` exist on log_entries
+try { db.exec("ALTER TABLE log_entries ADD COLUMN ascent_style TEXT;"); } catch(e) {}
+try { db.exec("ALTER TABLE log_entries ADD COLUMN attempts INTEGER;"); } catch(e) {}
+
 // Ensure `environment` exists on log_entries (safe migration)
 try {
   db.exec("ALTER TABLE log_entries ADD COLUMN environment TEXT NOT NULL DEFAULT 'indoor';");
@@ -367,8 +371,10 @@ app.get("/api/goals/user/:id", requireAuth, (req, res) => {
 });
 
 // -------------------- Logbook --------------------
+const VALID_ASCENT_STYLES = ["os", "flash", "rp", "pp"];
+
 app.post("/api/log/me", requireAuth, (req, res) => {
-  const { category, grade, count, notes, environment } = req.body;
+  const { category, grade, count, notes, environment, ascent_style, attempts } = req.body;
 
   if (!["lead", "boulder"].includes(category)) return res.status(400).json({ error: "Bad category" });
 
@@ -381,16 +387,19 @@ app.post("/api/log/me", requireAuth, (req, res) => {
   if (!isValidGrade(category, g, env)) return res.status(400).json({ error: "Bad grade" });
   if (!Number.isInteger(c) || c < 1) return res.status(400).json({ error: "Bad count" });
 
+  const style = ascent_style && VALID_ASCENT_STYLES.includes(ascent_style) ? ascent_style : null;
+  const att = attempts ? Math.max(1, Math.floor(Number(attempts))) : null;
+
   db.prepare(
-    "INSERT INTO log_entries (user_id, category, grade, count, notes, environment) VALUES (?,?,?,?,?,?)"
-  ).run(currentUserId(req), category, g, c, (notes || "").toString().slice(0, 500), env);
+    "INSERT INTO log_entries (user_id, category, grade, count, notes, environment, ascent_style, attempts) VALUES (?,?,?,?,?,?,?,?)"
+  ).run(currentUserId(req), category, g, c, (notes || "").toString().slice(0, 500), env, style, att);
 
   res.json({ ok: true });
 });
 
 app.get("/api/log/me", requireAuth, (req, res) => {
   const rows = db.prepare(`
-    SELECT id, category, grade, count, notes, environment, created_at
+    SELECT id, category, grade, count, notes, environment, ascent_style, attempts, created_at
     FROM log_entries
     WHERE user_id=?
     ORDER BY datetime(created_at) DESC
@@ -404,7 +413,7 @@ app.get("/api/log/user/:id", requireAuth, (req, res) => {
   if (!Number.isInteger(userId)) return res.status(400).json({ error: "Bad user id" });
 
   const rows = db.prepare(`
-    SELECT id, category, grade, count, notes, environment, created_at
+    SELECT id, category, grade, count, notes, environment, ascent_style, attempts, created_at
     FROM log_entries
     WHERE user_id=?
     ORDER BY datetime(created_at) DESC
