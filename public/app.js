@@ -546,18 +546,21 @@ async function initProfile() {
     bioText.textContent = bio.length ? bio : "Keine Bio gesetzt.";
   }
 
-  const [goalsR, progressR, logR] = await Promise.all([
+  const [goalsR, progressR, logR, activityR] = await Promise.all([
     api(`/api/goals/user/${id}`),
     api(`/api/progress/user/${id}`),
-    api(`/api/log/user/${id}`)
+    api(`/api/log/user/${id}`),
+    api(`/api/activity/user/${id}`)
   ]);
   const goals = (await goalsR.json()).goals;
   const progress = (await progressR.json()).progress || [];
   const log = (await logR.json()).entries;
+  const activity = (await activityR.json()).activity || [];
 
   const doneMap = {};
   for (const p of progress) doneMap[`${p.category}:${p.grade}`] = p.done;
 
+  renderActivityGraph(activity);
   renderUserGoals(goals, doneMap);
   renderUserLog(log);
 
@@ -684,6 +687,100 @@ async function initProfile() {
       };
     }
   }
+}
+
+function renderActivityGraph(activity) {
+  const el = document.getElementById("activityGraph");
+  if (!el) return;
+
+  // Build lookup: "YYYY-MM-DD" -> total count
+  const map = {};
+  for (const r of activity) map[r.day] = Number(r.total);
+
+  // Determine max for scaling
+  const max = Math.max(1, ...Object.values(map));
+
+  // Build 365-day grid starting from today going back
+  // Align to start of the week (Monday) so columns line up cleanly
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Find the Monday 52 full weeks ago
+  const startDay = new Date(today);
+  startDay.setDate(startDay.getDate() - 364);
+  // Rewind to Monday
+  const dow = (startDay.getDay() + 6) % 7; // 0=Mon
+  startDay.setDate(startDay.getDate() - dow);
+
+  const DAY_NAMES = ["Mo", "", "Mi", "", "Fr", "", "So"];
+  const MONTH_NAMES = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+
+  // Build columns (each column = one week, 7 days)
+  const columns = [];
+  let cur = new Date(startDay);
+  while (cur <= today) {
+    const week = [];
+    for (let d = 0; d < 7; d++) {
+      const iso = cur.toISOString().slice(0, 10);
+      week.push({ iso, count: map[iso] || 0, future: cur > today });
+      cur.setDate(cur.getDate() + 1);
+    }
+    columns.push(week);
+  }
+
+  // Month labels: detect when month changes between columns
+  const monthLabels = columns.map((week, i) => {
+    const firstDay = new Date(week[0].iso);
+    if (i === 0 || new Date(columns[i-1][0].iso).getMonth() !== firstDay.getMonth()) {
+      return MONTH_NAMES[firstDay.getMonth()];
+    }
+    return "";
+  });
+
+  function levelFor(count) {
+    if (count === 0) return 0;
+    if (count <= Math.ceil(max * 0.25)) return 1;
+    if (count <= Math.ceil(max * 0.5))  return 2;
+    if (count <= Math.ceil(max * 0.75)) return 3;
+    return 4;
+  }
+
+  // Total climbs this year
+  const totalClimbs = Object.values(map).reduce((a, b) => a + b, 0);
+  const activeDays = Object.values(map).filter(v => v > 0).length;
+
+  el.innerHTML = `
+    <div class="activity-header">
+      <span>${totalClimbs} Routen an ${activeDays} Tagen in den letzten 365 Tagen</span>
+    </div>
+    <div class="activity-wrap">
+      <div class="activity-day-labels">
+        ${DAY_NAMES.map(n => `<div class="activity-day-label">${n}</div>`).join("")}
+      </div>
+      <div class="activity-grid-wrap">
+        <div class="activity-month-row">
+          ${monthLabels.map(m => `<div class="activity-month-label">${m}</div>`).join("")}
+        </div>
+        <div class="activity-grid">
+          ${columns.map(week => `
+            <div class="activity-col">
+              ${week.map(day => `
+                <div
+                  class="activity-cell level-${day.future ? 0 : levelFor(day.count)}"
+                  title="${day.iso}${day.count ? ': ' + day.count + ' Routen' : ''}"
+                ></div>
+              `).join("")}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+    <div class="activity-legend">
+      <span class="muted">Weniger</span>
+      ${[0,1,2,3,4].map(l => `<div class="activity-cell level-${l}"></div>`).join("")}
+      <span class="muted">Mehr</span>
+    </div>
+  `;
 }
 
 function renderUserGoals(goals, doneMap = {}) {

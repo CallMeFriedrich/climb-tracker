@@ -402,6 +402,26 @@ app.get("/api/log/user/:id", requireAuth, (req, res) => {
   res.json({ entries: rows });
 });
 
+// -------------------- Activity Graph --------------------
+app.get("/api/activity/user/:id", requireAuth, (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId)) return res.status(400).json({ error: "Bad user id" });
+
+  // Last 365 days, grouped by date (YYYY-MM-DD)
+  const rows = db.prepare(`
+    SELECT
+      date(created_at) AS day,
+      SUM(count) AS total
+    FROM log_entries
+    WHERE user_id = ?
+      AND datetime(created_at) >= datetime('now', '-364 days')
+    GROUP BY date(created_at)
+    ORDER BY day ASC
+  `).all(userId);
+
+  res.json({ activity: rows });
+});
+
 // -------------------- Progress (X/Y) --------------------
 app.get("/api/progress/user/:id", requireAuth, (req, res) => {
   const userId = Number(req.params.id);

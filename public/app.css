@@ -656,3 +656,78 @@ input:focus, select:focus, textarea:focus{
   font-size: 15px;
   color: var(--accent);
 }
+
+/* ===== ACTIVITY GRAPH ===== */
+.activity-header{
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+.activity-wrap{
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.activity-day-labels{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 20px; /* align with grid (month row height) */
+  flex-shrink: 0;
+}
+.activity-day-label{
+  height: 11px;
+  width: 22px;
+  font-size: 9px;
+  color: var(--text-secondary);
+  line-height: 11px;
+  text-align: right;
+  padding-right: 4px;
+}
+.activity-grid-wrap{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.activity-month-row{
+  display: flex;
+  gap: 2px;
+}
+.activity-month-label{
+  width: 13px;
+  font-size: 9px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: visible;
+  text-align: left;
+}
+.activity-grid{
+  display: flex;
+  gap: 2px;
+}
+.activity-col{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.activity-cell{
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.activity-cell.level-0{ background: var(--border); }
+.activity-cell.level-1{ background: #fcd5bf; }
+.activity-cell.level-2{ background: #f7a07a; }
+.activity-cell.level-3{ background: #ee7040; }
+.activity-cell.level-4{ background: var(--accent); }
+.activity-legend{
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
