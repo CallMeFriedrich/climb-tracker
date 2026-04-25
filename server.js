@@ -108,7 +108,7 @@ app.use(session({
   store: new SqliteStore({ client: sessionDb }),
   cookie: {
     httpOnly: true,
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Tage
+    // maxAge wird per Login dynamisch gesetzt ("Eingeloggt bleiben")
     // secure: true, // enable when using HTTPS
     // sameSite: "lax"
   }
@@ -146,13 +146,19 @@ app.post("/api/register", async (req, res) => {
 });
 
 app.post("/api/login", async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, remember } = req.body;
   const user = db.prepare("SELECT id, password_hash FROM users WHERE username=?")
     .get(String(username));
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
   const ok = await bcrypt.compare(String(password), user.password_hash);
   if (!ok) return res.status(401).json({ error: "Invalid credentials" });
   req.session.userId = user.id;
+  // "Eingeloggt bleiben": 30 Tage; sonst Session-Cookie (läuft beim Browser-Schließen ab)
+  if (remember === "1") {
+    req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+  } else {
+    req.session.cookie.expires = false; // Session-Cookie
+  }
   res.json({ ok: true });
 });
 

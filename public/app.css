@@ -731,3 +731,20 @@ input:focus, select:focus, textarea:focus{
   font-size: 11px;
   color: var(--text-secondary);
 }
+
+/* ===== REMEMBER ME CHECKBOX ===== */
+.remember-label{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.remember-label input[type="checkbox"]{
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}

@@ -41,6 +41,11 @@
                    autocomplete="current-password" required />
           </div>
 
+          <label class="remember-label">
+            <input type="checkbox" id="remember" name="remember" value="1" checked />
+            Eingeloggt bleiben (30 Tage)
+          </label>
+
           <button class="btn btn-primary" type="submit">Einloggen</button>
 
           <div class="muted">
@@ -70,6 +75,8 @@
     document.getElementById("f").addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
+      // Checkbox ist nicht im FormData wenn unchecked — explizit setzen
+      if (!document.getElementById("remember").checked) fd.set("remember", "0");
 
       const r = await fetch("/api/login", {
         method: "POST",
