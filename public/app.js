@@ -834,32 +834,34 @@ function renderUserLog(entries, isSelf) {
   }
 
   el.innerHTML = `
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Datum</th>
-          <th>Kategorie</th>
-          <th>Grad</th>
-          <th>Umgebung</th>
-          <th>Anzahl</th>
-          <th>Notiz</th>
-          ${isSelf ? `<th></th>` : ""}
-        </tr>
-      </thead>
-      <tbody>
-        ${entries.map(e => `
-          <tr data-entry-id="${e.id}">
-            <td>${e.created_at}</td>
-            <td>${e.category}</td>
-            <td>${e.grade}</td>
-            <td>${escapeHtml(e.environment || "Indoor")}</td>
-            <td>x${e.count}</td>
-            <td>${escapeHtml(e.notes || "")}</td>
-            ${isSelf ? `<td><button class="btn-delete-entry" data-id="${e.id}" title="Eintrag löschen">✕</button></td>` : ""}
+    <div class="table-scroll">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>Kategorie</th>
+            <th>Grad</th>
+            <th>Umgebung</th>
+            <th>Anzahl</th>
+            <th>Notiz</th>
+            ${isSelf ? `<th class="td-del"></th>` : ""}
           </tr>
-        `).join("")}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${entries.map(e => `
+            <tr data-entry-id="${e.id}">
+              <td class="td-date">${e.created_at.replace("T"," ").slice(0,16)}</td>
+              <td>${e.category}</td>
+              <td>${e.grade}</td>
+              <td>${escapeHtml(e.environment || "Indoor")}</td>
+              <td>x${e.count}</td>
+              <td>${escapeHtml(e.notes || "")}</td>
+              ${isSelf ? `<td class="td-del"><button class="btn-delete-entry" data-id="${e.id}" title="Eintrag löschen">✕</button></td>` : ""}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
   `;
 
   if (isSelf) {
