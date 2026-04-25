@@ -748,3 +748,21 @@ input:focus, select:focus, textarea:focus{
   accent-color: var(--accent);
   cursor: pointer;
 }
+
+/* ===== LOG DELETE BUTTON ===== */
+.btn-delete-entry{
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  opacity: 0.5;
+  transition: opacity 0.15s, color 0.15s;
+}
+.btn-delete-entry:hover{
+  opacity: 1;
+  color: #dc2626;
+}

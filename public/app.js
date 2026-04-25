@@ -562,7 +562,7 @@ async function initProfile() {
 
   renderActivityGraph(activity);
   renderUserGoals(goals, doneMap);
-  renderUserLog(log);
+  renderUserLog(log, isSelf);
 
   // Self actions
   const selfActions = document.getElementById("selfActions");
@@ -821,7 +821,7 @@ function renderUserGoals(goals, doneMap = {}) {
   `;
 }
 
-function renderUserLog(entries) {
+function renderUserLog(entries, isSelf) {
   const el = document.getElementById("log");
   if (!el) return;
 
@@ -840,20 +840,42 @@ function renderUserLog(entries) {
           <th>Umgebung</th>
           <th>Anzahl</th>
           <th>Notiz</th>
+          ${isSelf ? `<th></th>` : ""}
         </tr>
       </thead>
       <tbody>
         ${entries.map(e => `
-          <tr>
+          <tr data-entry-id="${e.id}">
             <td>${e.created_at}</td>
             <td>${e.category}</td>
             <td>${e.grade}</td>
             <td>${escapeHtml(e.environment || "Indoor")}</td>
             <td>x${e.count}</td>
             <td>${escapeHtml(e.notes || "")}</td>
+            ${isSelf ? `<td><button class="btn-delete-entry" data-id="${e.id}" title="Eintrag löschen">✕</button></td>` : ""}
           </tr>
         `).join("")}
       </tbody>
     </table>
   `;
+
+  if (isSelf) {
+    el.querySelectorAll(".btn-delete-entry").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        const r = await api(`/api/log/me/${id}`, { method: "DELETE" });
+        if (r.ok) {
+          // Remove row from DOM without full reload
+          const row = el.querySelector(`tr[data-entry-id="${id}"]`);
+          if (row) row.remove();
+          // If table is now empty show placeholder
+          if (!el.querySelector("tbody tr")) {
+            el.innerHTML = `<div class="empty">Keine Logbuch-Einträge.</div>`;
+          }
+        } else {
+          alert((await r.json()).error || "Fehler beim Löschen");
+        }
+      });
+    });
+  }
 }

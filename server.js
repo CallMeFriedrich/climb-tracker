@@ -408,6 +408,18 @@ app.get("/api/log/user/:id", requireAuth, (req, res) => {
   res.json({ entries: rows });
 });
 
+app.delete("/api/log/me/:entryId", requireAuth, (req, res) => {
+  const entryId = Number(req.params.entryId);
+  if (!Number.isInteger(entryId)) return res.status(400).json({ error: "Bad id" });
+  const userId = currentUserId(req);
+  // Only delete if the entry belongs to the current user
+  const result = db.prepare(
+    "DELETE FROM log_entries WHERE id=? AND user_id=?"
+  ).run(entryId, userId);
+  if (result.changes === 0) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
+
 // -------------------- Activity Graph --------------------
 app.get("/api/activity/user/:id", requireAuth, (req, res) => {
   const userId = Number(req.params.id);
