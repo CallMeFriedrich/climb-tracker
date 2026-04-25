@@ -596,5 +596,31 @@ app.post("/api/admin/delete-user/:id", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// -------------------- Admin Backup --------------------
+app.get("/api/admin/backup", requireAdmin, (req, res) => {
+  // Checkpoint WAL so the file is consistent
+  try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch(e) {}
+
+  // Also save a timestamped copy inside the data dir
+  const backupDir = path.join(__dirname, "data", "backups");
+  try {
+    fs.mkdirSync(backupDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const dest = path.join(backupDir, `app-${ts}.db`);
+    fs.copyFileSync(DB_FILE, dest);
+    // Keep only the last 10 backups
+    const files = fs.readdirSync(backupDir)
+      .filter(f => f.endsWith(".db"))
+      .sort();
+    if (files.length > 10) {
+      files.slice(0, files.length - 10).forEach(f =>
+        fs.unlinkSync(path.join(backupDir, f))
+      );
+    }
+  } catch(e) { console.error("Backup copy failed:", e.message); }
+
+  res.download(DB_FILE, "climb-tracker-backup.db");
+});
+
 // -------------------- Start --------------------
 app.listen(PORT, () => console.log(`http://localhost:${PORT}`));

@@ -81,6 +81,13 @@ async function initDashboard() {
     };
   }
 
+  // Admin backup
+  const backupBtn = document.getElementById("backupBtn");
+  if (backupBtn && me && me.is_admin === 1) {
+    backupBtn.style.display = "inline-flex";
+    backupBtn.onclick = () => { window.location.href = "/api/admin/backup"; };
+  }
+
   // Admin reset
   const resetBtn = document.getElementById("resetBtn");
   if (resetBtn && me && me.is_admin === 1) {
