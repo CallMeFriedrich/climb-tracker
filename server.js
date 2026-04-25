@@ -218,7 +218,7 @@ app.post("/api/me/delete", requireAuth, (req, res) => {
 
 // -------------------- Community / Users --------------------
 app.get("/api/users", requireAuth, (req, res) => {
-  const users = db.prepare("SELECT id, username, bio, created_at FROM users ORDER BY username").all();
+  const users = db.prepare("SELECT id, username, bio, created_at FROM users WHERE is_admin=0 ORDER BY username").all();
   res.json({ users });
 });
 
@@ -226,8 +226,13 @@ app.get("/api/users", requireAuth, (req, res) => {
 app.get("/api/profile/user/:id", requireAuth, (req, res) => {
   const userId = Number(req.params.id);
   if (!Number.isInteger(userId)) return res.status(400).json({ error: "Bad user id" });
-  const user = db.prepare("SELECT id, username, bio, created_at FROM users WHERE id=?").get(userId);
+  const user = db.prepare("SELECT id, username, bio, created_at, is_admin FROM users WHERE id=?").get(userId);
   if (!user) return res.status(404).json({ error: "User not found" });
+  // Admin profile is only visible to the admin themselves
+  const requestingUser = db.prepare("SELECT is_admin FROM users WHERE id=?").get(currentUserId(req));
+  if (user.is_admin === 1 && requestingUser?.is_admin !== 1) {
+    return res.status(404).json({ error: "User not found" });
+  }
   res.json({ user });
 });
 
@@ -308,6 +313,7 @@ app.get("/api/leaderboard/weekly", requireAuth, (req, res) => {
     LEFT JOIN log_entries l
       ON l.user_id = u.id
       AND datetime(l.created_at) >= datetime(?)
+    WHERE u.is_admin = 0
     GROUP BY u.id
     ORDER BY score DESC, total_count DESC, u.username ASC
   `).all(startOfWeek);

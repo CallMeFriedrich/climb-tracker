@@ -303,41 +303,24 @@ function renderLogbook(logData) {
     return;
   }
 
+  function fmtDate(s) {
+    // "2026-04-25 10:07:58" → "25.04. 10:07"
+    const d = s ? s.replace("T"," ") : "";
+    const m = d.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+    return m ? `${m[3]}.${m[2]}. ${m[4]}:${m[5]}` : d.slice(0,16);
+  }
+
   el.innerHTML = `
-    <div class="log-table-wrap">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Datum</th>
-            <th>Kategorie</th>
-            <th>Grad</th>
-            <th>Umgebung</th>
-            <th>Anzahl</th>
-            <th>Notiz</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${entries.map(e => `
-            <tr>
-              <td>${e.created_at}</td>
-              <td>${e.category}</td>
-              <td>${e.grade}</td>
-              <td>${escapeHtml(e.environment || "indoor")}</td>
-              <td>x${e.count}</td>
-              <td>${escapeHtml(e.notes || "")}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
     <div class="log-cards">
       ${entries.map(e => `
         <div class="log-card">
           <div class="log-main">
-            <div class="log-grade">${e.category === "lead" ? "Lead" : "Boulder"} ${e.grade}</div>
-            <div class="log-detail">${e.created_at} · ${escapeHtml(e.environment || "indoor")}${e.notes ? " · " + escapeHtml(e.notes) : ""}</div>
+            <div class="log-grade">${e.category === "lead" ? "Lead" : "Boulder"} ${e.grade}
+              <span class="log-env-badge ${e.environment === 'outdoor' ? 'outdoor' : ''}">${e.environment === 'outdoor' ? 'Outdoor' : 'Indoor'}</span>
+            </div>
+            <div class="log-detail">${fmtDate(e.created_at)}${e.notes ? " · " + escapeHtml(e.notes) : ""}</div>
           </div>
-          <div class="log-count">x${e.count}</div>
+          <div class="log-count">×${e.count}</div>
         </div>
       `).join("")}
     </div>
@@ -476,33 +459,36 @@ async function initCommunityPage() {
   const startEl = document.getElementById("lbStart");
   if (startEl) startEl.textContent = lbData.startOfWeek;
 
+  const MEDALS = ["🥇","🥈","🥉"];
+
   if (boardEl) {
     if (!rows.length) {
       boardEl.innerHTML = `<div class="empty">Keine Daten diese Woche.</div>`;
     } else {
       boardEl.innerHTML = `
-        <table class="table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>User</th>
-              <th>Score</th>
-              <th>Lead</th>
-              <th>Boulder</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map((u, i) => `
-              <tr class="${me && String(u.user_id) === String(me.id) ? 'highlight' : ''}">
-                <td>${i + 1}</td>
-                <td><a href="profile.html?id=${u.user_id}">${escapeHtml(u.username)}</a></td>
-                <td><strong>${u.score ?? 0}</strong></td>
-                <td>${u.lead_count ?? 0}</td>
-                <td>${u.boulder_count ?? 0}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
+        <div class="lb-list">
+          ${rows.map((u, i) => {
+            const isSelf = me && String(u.user_id) === String(me.id);
+            const medal = MEDALS[i] || `<span class="lb-rank">${i + 1}</span>`;
+            const hasActivity = (u.score ?? 0) > 0;
+            return `
+              <a class="lb-row${isSelf ? ' lb-self' : ''}" href="profile.html?id=${u.user_id}">
+                <div class="lb-left">
+                  <span class="lb-medal">${medal}</span>
+                  <span class="lb-name">${escapeHtml(u.username)}</span>
+                  ${isSelf ? `<span class="lb-you">Du</span>` : ""}
+                </div>
+                <div class="lb-right">
+                  ${hasActivity ? `
+                    <span class="lb-stat" title="Score"><strong>${u.score ?? 0}</strong> Pts</span>
+                    <span class="lb-stat muted">Lead: ${u.lead_count ?? 0}</span>
+                    <span class="lb-stat muted">Boulder: ${u.boulder_count ?? 0}</span>
+                  ` : `<span class="muted lb-stat">Keine Einträge</span>`}
+                </div>
+              </a>
+            `;
+          }).join("")}
+        </div>
       `;
     }
   }
@@ -510,15 +496,23 @@ async function initCommunityPage() {
   // Render users
   const usersEl = document.getElementById("users");
   if (usersEl) {
-    usersEl.innerHTML = usersData.users.map(u => `
-      <div class="user-item">
-        <div class="meta">
-          <div class="name">${escapeHtml(u.username)}</div>
-          <div class="sub">ID: ${u.id}</div>
-        </div>
-        <a class="pill" href="profile.html?id=${u.id}">Ansehen</a>
-      </div>
-    `).join("");
+    if (!usersData.users?.length) {
+      usersEl.innerHTML = `<div class="empty">Keine Nutzer gefunden.</div>`;
+    } else {
+      usersEl.innerHTML = usersData.users.map(u => {
+        const isSelf = me && String(u.id) === String(me.id);
+        return `
+          <a class="user-row${isSelf ? ' lb-self' : ''}" href="profile.html?id=${u.id}">
+            <div class="user-avatar">${escapeHtml(u.username.slice(0,1).toUpperCase())}</div>
+            <div class="user-info">
+              <div class="user-name">${escapeHtml(u.username)}${isSelf ? ` <span class="lb-you">Du</span>` : ""}</div>
+              ${u.bio ? `<div class="user-bio">${escapeHtml(u.bio.slice(0,60))}${u.bio.length > 60 ? "…" : ""}</div>` : ""}
+            </div>
+            <span class="pill" style="flex-shrink:0">Profil →</span>
+          </a>
+        `;
+      }).join("");
+    }
   }
 }
 
