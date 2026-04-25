@@ -864,18 +864,38 @@ function renderUserLog(entries, isSelf) {
 
   if (isSelf) {
     el.querySelectorAll(".btn-delete-entry").forEach(btn => {
+      let confirming = false;
+      let resetTimer = null;
+
       btn.addEventListener("click", async () => {
+        if (!confirming) {
+          // First click: ask for confirmation
+          confirming = true;
+          btn.textContent = "Löschen?";
+          btn.classList.add("btn-delete-confirm");
+          // Auto-reset after 3 seconds if no second click
+          resetTimer = setTimeout(() => {
+            confirming = false;
+            btn.textContent = "✕";
+            btn.classList.remove("btn-delete-confirm");
+          }, 3000);
+          return;
+        }
+
+        // Second click: actually delete
+        clearTimeout(resetTimer);
         const id = btn.dataset.id;
         const r = await api(`/api/log/me/${id}`, { method: "DELETE" });
         if (r.ok) {
-          // Remove row from DOM without full reload
           const row = el.querySelector(`tr[data-entry-id="${id}"]`);
           if (row) row.remove();
-          // If table is now empty show placeholder
           if (!el.querySelector("tbody tr")) {
             el.innerHTML = `<div class="empty">Keine Logbuch-Einträge.</div>`;
           }
         } else {
+          confirming = false;
+          btn.textContent = "✕";
+          btn.classList.remove("btn-delete-confirm");
           alert((await r.json()).error || "Fehler beim Löschen");
         }
       });
