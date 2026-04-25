@@ -658,78 +658,92 @@ input:focus, select:focus, textarea:focus{
 }
 
 /* ===== ACTIVITY GRAPH ===== */
-.activity-header{
+.activity-summary{
   font-size: 13px;
   color: var(--text-secondary);
   margin-bottom: 10px;
 }
-.activity-wrap{
+/* Outer row: sticky day-labels + scrollable grid side by side */
+.ag-outer{
   display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  align-items: flex-start;
 }
-.activity-day-labels{
+/* Left column: day labels, stays fixed while grid scrolls */
+.ag-day-col{
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-top: 20px; /* align with grid (month row height) */
-  flex-shrink: 0;
-}
-.activity-day-label{
-  height: 11px;
-  width: 22px;
-  font-size: 9px;
-  color: var(--text-secondary);
-  line-height: 11px;
-  text-align: right;
   padding-right: 4px;
 }
-.activity-grid-wrap{
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.ag-month-spacer{
+  height: 18px; /* same as month label row */
+}
+.ag-day-label{
+  height: 13px;   /* = CELL size */
+  margin-bottom: 3px; /* = GAP */
+  font-size: 9px;
+  color: var(--text-secondary);
+  line-height: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+.ag-day-label:last-child{ margin-bottom: 0; }
+/* Scrollable area */
+.ag-scroll{
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
   min-width: 0;
 }
-.activity-month-row{
+.ag-inner{
   display: flex;
-  gap: 2px;
+  flex-direction: column;
 }
-.activity-month-label{
-  width: 13px;
+/* Month labels row — absolutely positioned within ag-inner */
+.ag-months{
+  position: relative;
+  flex-shrink: 0;
+}
+.ag-month-label{
+  position: absolute;
+  top: 0;
   font-size: 9px;
   color: var(--text-secondary);
   white-space: nowrap;
-  overflow: visible;
-  text-align: left;
+  line-height: 18px;
 }
-.activity-grid{
+/* The grid of cells */
+.ag-grid{
   display: flex;
-  gap: 2px;
+  gap: 3px;
 }
-.activity-col{
+.ag-col{
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-.activity-cell{
-  width: 11px;
-  height: 11px;
-  border-radius: 2px;
+  gap: 3px;
   flex-shrink: 0;
 }
-.activity-cell.level-0{ background: var(--border); }
-.activity-cell.level-1{ background: #fcd5bf; }
-.activity-cell.level-2{ background: #f7a07a; }
-.activity-cell.level-3{ background: #ee7040; }
-.activity-cell.level-4{ background: var(--accent); }
-.activity-legend{
+.ag-cell{
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.ag-cell.level-0{ background: var(--border); }
+.ag-cell.level-1{ background: #fcd5bf; }
+.ag-cell.level-2{ background: #f7a07a; }
+.ag-cell.level-3{ background: #ee7040; }
+.ag-cell.level-4{ background: var(--accent); }
+.ag-legend{
   display: flex;
   align-items: center;
   gap: 4px;
   margin-top: 8px;
   font-size: 11px;
   color: var(--text-secondary);
+  flex-wrap: nowrap;
+  overflow: visible;
+  padding-right: 4px;
 }
 
 /* ===== REMEMBER ME CHECKBOX ===== */

@@ -693,49 +693,38 @@ function renderActivityGraph(activity) {
   const el = document.getElementById("activityGraph");
   if (!el) return;
 
+  const CELL = 13;   // px per cell
+  const GAP  = 3;    // px gap between cells
+  const STEP = CELL + GAP;
+
   // Build lookup: "YYYY-MM-DD" -> total count
   const map = {};
   for (const r of activity) map[r.day] = Number(r.total);
-
-  // Determine max for scaling
   const max = Math.max(1, ...Object.values(map));
 
-  // Build 365-day grid starting from today going back
-  // Align to start of the week (Monday) so columns line up cleanly
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Find the Monday 52 full weeks ago
+  // Rewind to the most recent Monday, then go back 52 full weeks
   const startDay = new Date(today);
-  startDay.setDate(startDay.getDate() - 364);
-  // Rewind to Monday
-  const dow = (startDay.getDay() + 6) % 7; // 0=Mon
-  startDay.setDate(startDay.getDate() - dow);
+  const todayDow = (today.getDay() + 6) % 7; // 0=Mon
+  startDay.setDate(today.getDate() - todayDow - 51 * 7);
 
-  const DAY_NAMES = ["Mo", "", "Mi", "", "Fr", "", "So"];
+  const DAY_LABELS  = ["Mo", "", "Mi", "", "Fr", "", "So"];
   const MONTH_NAMES = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
 
-  // Build columns (each column = one week, 7 days)
+  // Build columns
   const columns = [];
   let cur = new Date(startDay);
   while (cur <= today) {
     const week = [];
     for (let d = 0; d < 7; d++) {
       const iso = cur.toISOString().slice(0, 10);
-      week.push({ iso, count: map[iso] || 0, future: cur > today });
+      week.push({ iso, count: map[iso] || 0, past: cur <= today });
       cur.setDate(cur.getDate() + 1);
     }
     columns.push(week);
   }
-
-  // Month labels: detect when month changes between columns
-  const monthLabels = columns.map((week, i) => {
-    const firstDay = new Date(week[0].iso);
-    if (i === 0 || new Date(columns[i-1][0].iso).getMonth() !== firstDay.getMonth()) {
-      return MONTH_NAMES[firstDay.getMonth()];
-    }
-    return "";
-  });
 
   function levelFor(count) {
     if (count === 0) return 0;
@@ -745,42 +734,56 @@ function renderActivityGraph(activity) {
     return 4;
   }
 
-  // Total climbs this year
   const totalClimbs = Object.values(map).reduce((a, b) => a + b, 0);
-  const activeDays = Object.values(map).filter(v => v > 0).length;
+  const activeDays  = Object.values(map).filter(v => v > 0).length;
 
+  // Month label positions (column index where month first appears)
+  const monthMarks = [];
+  columns.forEach((week, i) => {
+    const m = new Date(week[0].iso).getMonth();
+    if (i === 0 || new Date(columns[i-1][0].iso).getMonth() !== m) {
+      monthMarks.push({ col: i, label: MONTH_NAMES[m] });
+    }
+  });
+
+  // Render — single scrollable row with sticky day-labels on left
   el.innerHTML = `
-    <div class="activity-header">
-      <span>${totalClimbs} Routen an ${activeDays} Tagen in den letzten 365 Tagen</span>
-    </div>
-    <div class="activity-wrap">
-      <div class="activity-day-labels">
-        ${DAY_NAMES.map(n => `<div class="activity-day-label">${n}</div>`).join("")}
+    <div class="activity-summary">${totalClimbs} Routen an ${activeDays} Tagen in den letzten 365 Tagen</div>
+    <div class="ag-outer">
+      <div class="ag-day-col">
+        <div class="ag-month-spacer"></div>
+        ${DAY_LABELS.map(n => `<div class="ag-day-label">${n}</div>`).join("")}
       </div>
-      <div class="activity-grid-wrap">
-        <div class="activity-month-row">
-          ${monthLabels.map(m => `<div class="activity-month-label">${m}</div>`).join("")}
-        </div>
-        <div class="activity-grid">
-          ${columns.map(week => `
-            <div class="activity-col">
-              ${week.map(day => `
-                <div
-                  class="activity-cell level-${day.future ? 0 : levelFor(day.count)}"
-                  title="${day.iso}${day.count ? ': ' + day.count + ' Routen' : ''}"
-                ></div>
-              `).join("")}
-            </div>
-          `).join("")}
+      <div class="ag-scroll" id="agScroll">
+        <div class="ag-inner" style="width:${columns.length * STEP}px">
+          <div class="ag-months" style="height:18px; position:relative;">
+            ${monthMarks.map(m => `
+              <span class="ag-month-label" style="left:${m.col * STEP}px">${m.label}</span>
+            `).join("")}
+          </div>
+          <div class="ag-grid">
+            ${columns.map(week => `
+              <div class="ag-col">
+                ${week.map(day => `
+                  <div class="ag-cell level-${day.past ? levelFor(day.count) : 0}"
+                       title="${day.iso}${day.count ? ': ' + day.count + ' Routen' : ''}"></div>
+                `).join("")}
+              </div>
+            `).join("")}
+          </div>
         </div>
       </div>
     </div>
-    <div class="activity-legend">
+    <div class="ag-legend">
       <span class="muted">Weniger</span>
-      ${[0,1,2,3,4].map(l => `<div class="activity-cell level-${l}"></div>`).join("")}
+      ${[0,1,2,3,4].map(l => `<div class="ag-cell level-${l}"></div>`).join("")}
       <span class="muted">Mehr</span>
     </div>
   `;
+
+  // Auto-scroll to the right (most recent weeks)
+  const scroller = document.getElementById("agScroll");
+  if (scroller) scroller.scrollLeft = scroller.scrollWidth;
 }
 
 function renderUserGoals(goals, doneMap = {}) {
