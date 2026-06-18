@@ -4,21 +4,29 @@ async function api(url, options) {
   return r;
 }
 
+const FRENCH_GRADES = ["4a","4b","4c","5a","5b","5c","6a","6a+","6b","6b+","6c","6c+","7a","7a+","7b","7b+","7c","7c+","8a","8a+","8b","8b+","8c","8c+","9a"];
+const BOULDER_NUM_GRADES = ["1","2","3","4","5","6","7","8","9"];
+const UIAA_GRADES = ["I","II","III","III+","IV-","IV","IV+","V-","V","V+","VI-","VI","VI+","VII-","VII","VII+","VIII-","VIII","VIII+","IX-","IX","IX+","X-","X","X+","XI-","XI"];
+
 function gradesFor(category, environment) {
-  if (category === "lead") {
-    return ["4a","4b","4c","5a","5b","5c","6a","6a+","6b","6b+","6c","6c+","7a","7a+","7b","7b+","7c","7c+","8a","8a+","8b","8b+","8c","8c+","9a"];
-  }
-  if (category === "boulder" && environment === "outdoor") {
-    return ["4a","4b","4c","5a","5b","5c","6a","6a+","6b","6b+","6c","6c+","7a","7a+","7b","7b+","7c","7c+","8a","8a+","8b","8b+","8c","8c+","9a"];
-  }
-  return ["1","2","3","4","5","6","7","8","9"];
+  if (category === "lead") return FRENCH_GRADES;
+  if (category === "boulder" && environment === "outdoor") return FRENCH_GRADES;
+  return BOULDER_NUM_GRADES;
 }
 
-function fillGradeSelect(category, selectedGrade, environment) {
+// Grade list for the new discipline-based entry flow
+function gradesForDiscipline(discipline, environment) {
+  if (discipline === "alpin") return UIAA_GRADES;
+  if (discipline === "sport") return FRENCH_GRADES;
+  // boulder
+  return environment === "outdoor" ? FRENCH_GRADES : BOULDER_NUM_GRADES;
+}
+
+function fillGradeSelect(grades, selectedGrade) {
   const sel = document.getElementById("grade");
   if (!sel) return;
   sel.innerHTML = "";
-  for (const g of gradesFor(category, environment)) {
+  for (const g of grades) {
     const o = document.createElement("option");
     o.value = g;
     o.textContent = g;
@@ -118,189 +126,545 @@ async function initDashboard() {
 
 function initQuickLog() {
   const last = getLastChoice();
-  let currentCat = last.category;
-  const envSelect = document.getElementById("env");
 
-  function currentEnv() {
-    return envSelect ? envSelect.value : "indoor";
-  }
+  // ---- State ----
+  let env = "indoor";
+  let discipline = (last.category === "boulder") ? "boulder" : "sport";
+  let mode = "lead";          // sport only
+  let currentStyle = "";
+  let currentAttempts = 2;
 
-  // ---- Ascent style / attempts ----
+  // Crowdsourced location caches
+  let crags = [], sectors = [], routes = [];
+
+  // Alpine: partners + interactive pin map
+  let users = [], selectedPartners = [];
+  let alpinMap = null, alpinMarker = null;
+
+  // ---- Elements ----
+  const envHidden    = document.getElementById("env");
+  const discHidden   = document.getElementById("discValue");
+  const modeHidden   = document.getElementById("modeValue");
+  const styleInput   = document.getElementById("styleInput");
+  const cragIdEl     = document.getElementById("cragId");
+  const sectorIdEl   = document.getElementById("sectorId");
+  const routeIdEl    = document.getElementById("routeId");
+
+  const discToggle   = document.getElementById("discToggle");
+  const modeField    = document.getElementById("modeField");
+  const gradeSelect  = document.getElementById("grade");
+  const gradeLabel   = document.getElementById("gradeLabel");
+  const styleField   = document.getElementById("styleField");
+  const styleBtns    = document.getElementById("styleBtns");
+  const styleDesc    = document.getElementById("styleDesc");
+  const attField     = document.getElementById("attemptsField");
+  const attValue     = document.getElementById("attValue");
+  const attInput     = document.getElementById("attInput");
+  const locationSec  = document.getElementById("locationSection");
+  const sportExtras  = document.getElementById("sportExtras");
+  const alpinSection = document.getElementById("alpinSection");
+  const submitBtn    = document.getElementById("submitLog");
+
+  // ---- Ascent style definitions ----
   const LEAD_STYLES = [
     { key: "os",    label: "OS",    desc: "Onsight — erster Versuch, kein Beta, keine Vorinformation." },
     { key: "flash", label: "Flash", desc: "Flash — erster Versuch mit Beta (Zusehen, Tipps, …)." },
     { key: "rp",    label: "RP",    desc: "Rotpunkt — sauberer Durchstieg nach mehreren Versuchen." },
     { key: "pp",    label: "PP",    desc: "Pinkpoint — wie RP, aber Expressschlingen waren vorgehängt." },
   ];
+  const TR_STYLES = [
+    { key: "os",    label: "OS",    desc: "Onsight — erster Versuch, kein Beta." },
+    { key: "flash", label: "Flash", desc: "Flash — erster Versuch mit Beta." },
+    { key: "tr",    label: "TR",    desc: "Toprope — durchgestiegen nach mehreren Versuchen." },
+  ];
   const BOULDER_ATTEMPTS = [
     { key: "flash", label: "⚡ Flash" },
-    { key: "2",  label: "2" }, { key: "3",  label: "3" },
-    { key: "4",  label: "4" }, { key: "5",  label: "5" },
-    { key: "6",  label: "6" }, { key: "7+", label: "7+" },
+    { key: "2", label: "2" }, { key: "3", label: "3" },
+    { key: "4", label: "4" }, { key: "5", label: "5" },
+    { key: "6", label: "6" }, { key: "7+", label: "7+" },
   ];
 
-  const styleBtns  = document.getElementById("styleBtns");
-  const styleDesc  = document.getElementById("styleDesc");
-  const styleInput = document.getElementById("styleInput");
-  const attField   = document.getElementById("attemptsField");
-  const attValue   = document.getElementById("attValue");
-  const attInput   = document.getElementById("attInput");
-  const attMinus   = document.getElementById("attMinus");
-  const attPlus    = document.getElementById("attPlus");
-
-  let currentStyle = "";
-  let currentAttempts = 2;
+  function styleItems() {
+    if (discipline === "boulder") return BOULDER_ATTEMPTS;
+    if (discipline === "sport") return mode === "toprope" ? TR_STYLES : LEAD_STYLES;
+    return []; // alpin → none
+  }
 
   function setAttempts(n) {
     currentAttempts = Math.max(2, n);
     if (attValue) attValue.textContent = currentAttempts;
     if (attInput) attInput.value = currentAttempts;
   }
+  document.getElementById("attMinus")?.addEventListener("click", () => setAttempts(currentAttempts - 1));
+  document.getElementById("attPlus")?.addEventListener("click", () => setAttempts(currentAttempts + 1));
 
-  if (attMinus) attMinus.addEventListener("click", () => setAttempts(currentAttempts - 1));
-  if (attPlus)  attPlus.addEventListener("click",  () => setAttempts(currentAttempts + 1));
+  // ---- Discipline buttons (depend on environment) ----
+  function disciplinesFor(e) {
+    return e === "indoor"
+      ? [{ key: "sport", label: "Sport" }, { key: "boulder", label: "Boulder" }]
+      : [{ key: "boulder", label: "Boulder" }, { key: "sport", label: "Sport" }, { key: "alpin", label: "Alpin" }];
+  }
 
-  function renderStyleBtns() {
-    if (!styleBtns) return;
-    const isLead = currentCat === "lead";
-    const items = isLead ? LEAD_STYLES : BOULDER_ATTEMPTS;
-    // Default selection
-    if (!currentStyle || !items.find(i => i.key === currentStyle)) {
-      currentStyle = items[0].key;
-    }
-    styleBtns.innerHTML = items.map(item => `
-      <button type="button" class="style-btn${currentStyle === item.key ? ' active' : ''}"
-              data-style="${item.key}">${item.label}</button>
-    `).join("");
-    if (styleInput) styleInput.value = isLead ? currentStyle : (currentStyle === "flash" ? "flash" : "");
-    // Attempts counter: only for lead RP/PP
-    const needsAttempts = isLead && (currentStyle === "rp" || currentStyle === "pp");
-    if (attField) attField.style.display = needsAttempts ? "" : "none";
-    // Description
-    if (styleDesc && isLead) {
-      const found = LEAD_STYLES.find(s => s.key === currentStyle);
-      styleDesc.textContent = found ? found.desc : "";
-      styleDesc.style.display = found ? "" : "none";
-    } else if (styleDesc) {
-      styleDesc.style.display = "none";
-    }
-    // Wire up buttons
-    styleBtns.querySelectorAll(".style-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        currentStyle = btn.dataset.style;
-        renderStyleBtns();
-        updateSubmitLabel();
-      });
+  function renderDisciplines() {
+    const items = disciplinesFor(env);
+    if (!items.find(i => i.key === discipline)) discipline = items[0].key;
+    discToggle.innerHTML = items.map(i =>
+      `<button type="button" class="toggle-btn${discipline === i.key ? " active" : ""}" data-disc="${i.key}">${i.label}</button>`
+    ).join("");
+    discToggle.querySelectorAll("[data-disc]").forEach(btn => {
+      btn.addEventListener("click", () => { discipline = btn.dataset.disc; onDisciplineChange(); });
     });
   }
 
-  renderStyleBtns();
+  // ---- Style buttons ----
+  function renderStyleBtns() {
+    const items = styleItems();
+    if (discipline === "alpin" || !items.length) {
+      styleField.style.display = "none";
+      attField.style.display = "none";
+      if (styleInput) styleInput.value = "";
+      return;
+    }
+    styleField.style.display = "";
+    if (!currentStyle || !items.find(i => i.key === currentStyle)) currentStyle = items[0].key;
 
-  // ---- Category toggle ----
-  const toggleBtns = document.querySelectorAll(".toggle-btn[data-cat]");
-  toggleBtns.forEach(btn => {
-    if (btn.dataset.cat === currentCat) btn.classList.add("active");
+    styleBtns.innerHTML = items.map(i =>
+      `<button type="button" class="style-btn${currentStyle === i.key ? " active" : ""}" data-style="${i.key}">${i.label}</button>`
+    ).join("");
+    styleBtns.querySelectorAll(".style-btn").forEach(btn => {
+      btn.addEventListener("click", () => { currentStyle = btn.dataset.style; renderStyleBtns(); updateSubmitLabel(); });
+    });
+
+    // Attempts: sport lead RP/PP, sport toprope TR
+    const needsAttempts = discipline === "sport" && ["rp", "pp", "tr"].includes(currentStyle);
+    attField.style.display = needsAttempts ? "" : "none";
+
+    // Description (sport only)
+    if (discipline === "sport") {
+      const found = items.find(s => s.key === currentStyle);
+      styleDesc.textContent = found ? found.desc : "";
+      styleDesc.style.display = found ? "" : "none";
+    } else {
+      styleDesc.style.display = "none";
+    }
+  }
+
+  // ---- Grade ----
+  function refreshGrades(keep) {
+    fillGradeSelect(gradesForDiscipline(discipline, env), keep || "");
+    if (gradeLabel) gradeLabel.textContent = discipline === "alpin" ? "UIAA-Schwierigkeit" : "Schwierigkeit";
+  }
+
+  // ---- Location (crag / sector / route) ----
+  function cragLabel() {
+    if (env === "indoor") return "Halle";
+    if (discipline === "boulder") return "Gebiet / Ort";
+    return "Klettergarten";
+  }
+  const showSectorRoute = () => discipline === "sport" && env === "outdoor";
+  // Indoor halls share one list (sport + boulder); outdoor crags stay per discipline
+  const cragKind = () => (env === "indoor" ? "indoor" : discipline);
+
+  async function loadCrags() {
+    crags = [];
+    try { crags = (await (await api(`/api/crags?discipline=${cragKind()}`)).json()).crags || []; } catch {}
+  }
+  async function loadSectors(cragId) {
+    sectors = [];
+    if (cragId) { try { sectors = (await (await api(`/api/crags/${cragId}/sectors`)).json()).sectors || []; } catch {} }
+  }
+  async function loadRoutes(sectorId) {
+    routes = [];
+    if (sectorId) { try { routes = (await (await api(`/api/sectors/${sectorId}/routes`)).json()).routes || []; } catch {} }
+  }
+
+  // Generic alphabetical dropdown with a "+ Hinzufügen…" option at the bottom.
+  function locField(wrap, opts) {
+    if (!wrap) return;
+    const { items, placeholder, addPlaceholder, disabled = false, selectedId = "", onPick, onAdd } = opts;
+    wrap.innerHTML = `
+      <select class="loc-select"${disabled ? " disabled" : ""}>
+        <option value="">${placeholder}</option>
+        ${items.map(i => `<option value="${i.id}"${String(i.id) === String(selectedId) ? " selected" : ""}>${escapeHtml(i.name)}</option>`).join("")}
+        ${disabled ? "" : `<option value="__add__">+ Hinzufügen…</option>`}
+      </select>
+      <div class="loc-add" style="display:none;">
+        <input type="text" placeholder="${addPlaceholder}" maxlength="120" autocomplete="off" />
+        <div class="loc-add-btns">
+          <button type="button" class="btn btn-primary loc-save">Hinzufügen</button>
+          <button type="button" class="btn btn-ghost loc-cancel">Abbrechen</button>
+        </div>
+      </div>`;
+    const sel = wrap.querySelector(".loc-select");
+    const addBox = wrap.querySelector(".loc-add");
+    const addInput = wrap.querySelector(".loc-add input");
+    sel.addEventListener("change", () => {
+      if (sel.value === "__add__") { sel.value = ""; addBox.style.display = "block"; addInput.focus(); return; }
+      onPick(sel.value);
+    });
+    wrap.querySelector(".loc-cancel").addEventListener("click", () => { addBox.style.display = "none"; addInput.value = ""; });
+    const doSave = async () => {
+      const name = addInput.value.trim();
+      if (!name) return;
+      addInput.disabled = true;
+      await onAdd(name);
+    };
+    wrap.querySelector(".loc-save").addEventListener("click", doSave);
+    addInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doSave(); } });
+  }
+
+  function renderCragSelect() {
+    locField(document.getElementById("cragWrap"), {
+      items: crags, placeholder: "— wählen —", addPlaceholder: `${cragLabel()} hinzufügen`,
+      selectedId: cragIdEl.value,
+      onPick: async (id) => {
+        cragIdEl.value = id; sectorIdEl.value = ""; routeIdEl.value = "";
+        if (showSectorRoute()) { await loadSectors(id || null); renderSectorSelect(); renderRouteSelect(); }
+        updateSubmitLabel();
+      },
+      onAdd: async (name) => {
+        const r = await api("/api/crags", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, discipline: cragKind() }) });
+        if (!r.ok) { alert("Konnte nicht angelegt werden."); return; }
+        const c = (await r.json()).crag;
+        await loadCrags(); cragIdEl.value = c.id; renderCragSelect();
+        if (showSectorRoute()) { sectorIdEl.value = ""; routeIdEl.value = ""; await loadSectors(c.id); renderSectorSelect(); renderRouteSelect(); }
+      }
+    });
+  }
+
+  function renderSectorSelect() {
+    const wrap = document.getElementById("sectorWrap"); if (!wrap) return;
+    const disabled = !cragIdEl.value;
+    locField(wrap, {
+      items: sectors, placeholder: disabled ? "erst Klettergarten wählen" : "— wählen —", addPlaceholder: "Sektor hinzufügen",
+      disabled, selectedId: sectorIdEl.value,
+      onPick: async (id) => { sectorIdEl.value = id; routeIdEl.value = ""; await loadRoutes(id || null); renderRouteSelect(); },
+      onAdd: async (name) => {
+        const r = await api("/api/sectors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ crag_id: Number(cragIdEl.value), name }) });
+        if (!r.ok) { alert("Konnte nicht angelegt werden."); return; }
+        const s = (await r.json()).sector;
+        await loadSectors(cragIdEl.value); sectorIdEl.value = s.id; renderSectorSelect();
+        routeIdEl.value = ""; await loadRoutes(s.id); renderRouteSelect();
+      }
+    });
+  }
+
+  function renderRouteSelect() {
+    const wrap = document.getElementById("routeWrap"); if (!wrap) return;
+    const disabled = !sectorIdEl.value;
+    locField(wrap, {
+      items: routes, placeholder: disabled ? "erst Sektor wählen" : "— wählen —", addPlaceholder: "Route hinzufügen",
+      disabled, selectedId: routeIdEl.value,
+      onPick: (id) => {
+        routeIdEl.value = id;
+        const rt = routes.find(x => String(x.id) === String(id));
+        if (rt) {
+          if (rt.grade && gradesForDiscipline(discipline, env).includes(rt.grade)) refreshGrades(rt.grade);
+          const len = document.getElementById("length_m"); if (len && rt.length_m) len.value = rt.length_m;
+          updateSubmitLabel();
+        }
+      },
+      onAdd: async (name) => {
+        const r = await api("/api/routes", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ crag_id: Number(cragIdEl.value), sector_id: Number(sectorIdEl.value), name, grade: gradeSelect.value, length_m: document.getElementById("length_m")?.value || null }) });
+        if (!r.ok) { alert("Konnte nicht angelegt werden."); return; }
+        const rt = (await r.json()).route;
+        await loadRoutes(sectorIdEl.value); routeIdEl.value = rt.id; renderRouteSelect();
+      }
+    });
+  }
+
+  async function buildLocationUI() {
+    if (discipline === "alpin") { locationSec.innerHTML = ""; return; }
+    locationSec.innerHTML = `
+      <div class="field">
+        <label>${cragLabel()} <span class="opt">optional</span></label>
+        <div id="cragWrap"></div>
+      </div>
+      ${showSectorRoute() ? `
+      <div class="field"><label>Sektor <span class="opt">optional</span></label><div id="sectorWrap"></div></div>
+      <div class="field"><label>Route <span class="opt">optional</span></label><div id="routeWrap"></div></div>` : ""}
+    `;
+    cragIdEl.value = ""; sectorIdEl.value = ""; routeIdEl.value = "";
+    await loadCrags();
+    renderCragSelect();
+    if (showSectorRoute()) { renderSectorSelect(); renderRouteSelect(); }
+  }
+
+  // ---- Alpine section ----
+  async function buildAlpinUI() {
+    alpinSection.innerHTML = `
+      <div class="divider"></div>
+      <div class="form">
+        <div class="field">
+          <label for="tour_name">Tourname</label>
+          <input id="tour_name" name="tour_name" maxlength="160" placeholder="z.B. Watzmann Ostwand" />
+        </div>
+        <div class="grid cols-2" style="gap:12px;">
+          <div class="field"><label for="summit">Gipfel</label><input id="summit" name="summit" maxlength="120" placeholder="z.B. Watzmann" /></div>
+          <div class="field"><label for="region">Region</label><input id="region" name="region" maxlength="120" placeholder="z.B. Berchtesgaden" /></div>
+          <div class="field"><label for="pitches">Seillängen <span class="opt">optional</span></label><input id="pitches" name="pitches" type="number" min="0" inputmode="numeric" /></div>
+          <div class="field"><label for="height_m">Höhenmeter <span class="opt">optional</span></label><input id="height_m" name="height_m" type="number" min="0" inputmode="numeric" /></div>
+          <div class="field"><label for="climb_date">Datum <span class="opt">optional</span></label><input id="climb_date" name="climb_date" type="date" /></div>
+          <div class="field"><label for="time_spent">Zeitaufwand <span class="opt">optional</span></label><input id="time_spent" name="time_spent" maxlength="60" placeholder="z.B. 6 h" /></div>
+        </div>
+        <div class="field">
+          <label for="protection">Absicherung <span class="opt">optional</span></label>
+          <select id="protection" name="protection">
+            <option value="">—</option>
+            <option value="trad">Trad / selbst absichern</option>
+            <option value="bolt">Bohrhaken</option>
+            <option value="mixed">Gemischt</option>
+          </select>
+        </div>
+        <div class="field"><label for="conditions">Verhältnisse <span class="opt">optional</span></label><textarea id="conditions" name="conditions" rows="2" maxlength="1000" placeholder="Felsqualität, Eis-/Schneelage, Steinschlagrisiko …"></textarea></div>
+        <div class="grid cols-2" style="gap:12px;">
+          <div class="field"><label for="approach">Zustieg <span class="opt">optional</span></label><textarea id="approach" name="approach" rows="2" maxlength="1000" placeholder="Besonderheiten Zustieg"></textarea></div>
+          <div class="field"><label for="descent">Abstieg <span class="opt">optional</span></label><textarea id="descent" name="descent" rows="2" maxlength="1000" placeholder="Besonderheiten Abstieg"></textarea></div>
+        </div>
+        <div class="field"><label for="beta">Beta <span class="opt">optional</span></label><textarea id="beta" name="beta" rows="3" maxlength="2000" placeholder="Taktik-Tipps, Schlüsselstellen, Routenführung …"></textarea></div>
+        <div class="field">
+          <label>Kletterpartner <span class="opt">optional</span></label>
+          <div class="partner-chips" id="partnerChips"></div>
+          <select id="partnerSelect"><option value="">+ Partner hinzufügen…</option></select>
+          <input type="hidden" name="partner_ids" id="partnerIds" />
+        </div>
+        <div class="field">
+          <label>Ort auf der Karte <span class="opt">optional</span></label>
+          <p class="muted" style="margin:0 0 6px;">Tippe auf die Karte, um die Nadel zu setzen — oder ziehe sie an die richtige Stelle.</p>
+          <div id="alpinMap" class="alpin-map"></div>
+          <input type="hidden" name="lat" id="latInput" />
+          <input type="hidden" name="lng" id="lngInput" />
+          <div class="map-actions">
+            <button type="button" class="btn btn-ghost" id="useGeo">📍 Mein Standort</button>
+            <button type="button" class="btn btn-ghost" id="clearPin">Nadel entfernen</button>
+          </div>
+        </div>
+      </div>
+    `;
+    // Load community users for the partner picker (excluding myself)
+    try {
+      const [uRes, meRes] = await Promise.all([api("/api/users"), api("/api/me")]);
+      const allUsers = (await uRes.json()).users || [];
+      const meId = (await meRes.json()).me?.id;
+      users = allUsers.filter(u => String(u.id) !== String(meId));
+    } catch {}
+    const partnerSelect = document.getElementById("partnerSelect");
+    partnerSelect?.addEventListener("change", (e) => {
+      const id = e.target.value;
+      if (id) {
+        const u = users.find(x => String(x.id) === String(id));
+        if (u && !selectedPartners.find(p => p.id === u.id)) selectedPartners.push({ id: u.id, username: u.username });
+      }
+      e.target.value = "";
+      renderPartnerSelect(); renderPartnerChips();
+    });
+    renderPartnerSelect();
+    renderPartnerChips();
+  }
+
+  function renderPartnerSelect() {
+    const sel = document.getElementById("partnerSelect"); if (!sel) return;
+    const avail = users.filter(u => !selectedPartners.find(p => p.id === u.id));
+    sel.innerHTML = `<option value="">+ Partner hinzufügen…</option>` +
+      avail.map(u => `<option value="${u.id}">${escapeHtml(u.username)}</option>`).join("");
+  }
+  function renderPartnerChips() {
+    const box = document.getElementById("partnerChips"); if (!box) return;
+    box.innerHTML = selectedPartners.map(p =>
+      `<span class="partner-chip">${escapeHtml(p.username)}<button type="button" data-rm="${p.id}" aria-label="entfernen">✕</button></span>`
+    ).join("");
+    box.querySelectorAll("[data-rm]").forEach(btn => btn.addEventListener("click", () => {
+      selectedPartners = selectedPartners.filter(p => String(p.id) !== String(btn.dataset.rm));
+      renderPartnerSelect(); renderPartnerChips();
+    }));
+    const hidden = document.getElementById("partnerIds");
+    if (hidden) hidden.value = selectedPartners.map(p => p.id).join(",");
+  }
+
+  // Interactive map: click or drag a pin to set the tour location; coords saved as lat/lng.
+  function initAlpinMap() {
+    const el = document.getElementById("alpinMap");
+    if (!el) return;
+    if (typeof L === "undefined") { setTimeout(initAlpinMap, 300); return; }
+    if (alpinMap) { setTimeout(() => alpinMap.invalidateSize(), 100); return; }
+    alpinMap = L.map(el).setView([47.0, 11.0], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(alpinMap);
+    const latEl = document.getElementById("latInput"), lngEl = document.getElementById("lngInput");
+    function setPin(ll) {
+      if (!alpinMarker) {
+        alpinMarker = L.marker(ll, { draggable: true }).addTo(alpinMap);
+        alpinMarker.on("dragend", () => { const p = alpinMarker.getLatLng(); latEl.value = p.lat.toFixed(6); lngEl.value = p.lng.toFixed(6); });
+      } else alpinMarker.setLatLng(ll);
+      latEl.value = ll.lat.toFixed(6); lngEl.value = ll.lng.toFixed(6);
+    }
+    alpinMap.on("click", (e) => setPin(e.latlng));
+    document.getElementById("useGeo")?.addEventListener("click", () => {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(pos => {
+        const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
+        alpinMap.setView(ll, 13); setPin(ll);
+      });
+    });
+    document.getElementById("clearPin")?.addEventListener("click", () => {
+      if (alpinMarker) { alpinMap.removeLayer(alpinMarker); alpinMarker = null; }
+      latEl.value = ""; lngEl.value = "";
+    });
+    setTimeout(() => alpinMap.invalidateSize(), 250);
+  }
+
+  // ---- Apply discipline state to the whole form ----
+  async function onDisciplineChange() {
+    discHidden.value = discipline;
+    // toggle buttons active state
+    discToggle.querySelectorAll("[data-disc]").forEach(b => b.classList.toggle("active", b.dataset.disc === discipline));
+
+    const isAlpin = discipline === "alpin";
+    const isSport = discipline === "sport";
+
+    modeField.style.display = isSport ? "" : "none";
+    // Route length + quickdraws only make sense for outdoor sport routes
+    sportExtras.style.display = (isSport && env === "outdoor") ? "grid" : "none";
+    alpinSection.style.display = isAlpin ? "" : "none";
+
+    currentStyle = "";
+    refreshGrades("");
+    renderStyleBtns();
+
+    // Location vs alpine fields
+    if (isAlpin) {
+      locationSec.innerHTML = "";
+      if (!alpinSection.dataset.built) { await buildAlpinUI(); alpinSection.dataset.built = "1"; }
+      initAlpinMap();
+    } else {
+      await buildLocationUI();
+    }
+    updateSubmitLabel();
+  }
+
+  // ---- Environment ----
+  document.querySelectorAll("#envToggle [data-env]").forEach(btn => {
     btn.addEventListener("click", () => {
-      toggleBtns.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      currentCat = btn.dataset.cat;
-      currentStyle = ""; // reset
-      fillGradeSelect(currentCat, "", currentEnv());
+      env = btn.dataset.env;
+      envHidden.value = env;
+      document.querySelectorAll("#envToggle [data-env]").forEach(b => b.classList.toggle("active", b.dataset.env === env));
+      renderDisciplines();
+      onDisciplineChange();
+    });
+  });
+
+  // ---- Mode (sport) ----
+  document.querySelectorAll("#modeToggle [data-mode]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      mode = btn.dataset.mode;
+      modeHidden.value = mode;
+      document.querySelectorAll("#modeToggle [data-mode]").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+      currentStyle = "";
       renderStyleBtns();
       updateSubmitLabel();
     });
   });
 
-  // Update grades when environment changes
-  if (envSelect) {
-    envSelect.addEventListener("change", () => {
-      fillGradeSelect(currentCat, "", currentEnv());
-      updateSubmitLabel();
-    });
-  }
-
-  fillGradeSelect(currentCat, last.grade, currentEnv());
-
-  // Hidden category input
-  const catInput = document.getElementById("catValue");
-  if (catInput) catInput.value = currentCat;
-  toggleBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-      if (catInput) catInput.value = btn.dataset.cat;
-    });
-  });
-
-  // Mehr Optionen toggle
+  // ---- Mehr Optionen ----
   const expandLink = document.getElementById("expandExtras");
   const extraFields = document.getElementById("extraFields");
-  if (expandLink && extraFields) {
-    expandLink.addEventListener("click", () => {
-      extraFields.classList.toggle("visible");
-      expandLink.textContent = extraFields.classList.contains("visible") ? "Weniger Optionen" : "Mehr Optionen";
-    });
-  }
+  expandLink?.addEventListener("click", () => {
+    extraFields.classList.toggle("visible");
+    expandLink.textContent = extraFields.classList.contains("visible") ? "Weniger Optionen" : "Mehr Optionen";
+  });
 
-  // Dynamic submit label
-  const gradeSelect = document.getElementById("grade");
-  const submitBtn = document.getElementById("submitLog");
+  // ---- Submit label ----
   function updateSubmitLabel() {
     if (!submitBtn) return;
-    const cat = currentCat === "lead" ? "Lead" : "Boulder";
     const grade = gradeSelect ? gradeSelect.value : "";
-    const stylePart = currentStyle && currentStyle !== "" ? ` · ${currentStyle.toUpperCase()}` : "";
-    submitBtn.textContent = grade ? `${cat} ${grade}${stylePart} speichern` : `${cat} speichern`;
+    const discLabel = discipline === "boulder" ? "Boulder" : discipline === "alpin" ? "Alpin" : (mode === "toprope" ? "Toprope" : "Sport");
+    const stylePart = (discipline === "sport" && currentStyle) ? ` · ${currentStyle.toUpperCase()}` : "";
+    if (discipline === "alpin") { submitBtn.textContent = grade ? `Alpin ${grade} speichern` : "Tour speichern"; return; }
+    submitBtn.textContent = grade ? `${discLabel} ${grade}${stylePart} speichern` : `${discLabel} speichern`;
   }
-  if (gradeSelect) gradeSelect.addEventListener("change", updateSubmitLabel);
+  gradeSelect?.addEventListener("change", updateSubmitLabel);
+
+  // ---- Initial render ----
+  renderDisciplines();
+  onDisciplineChange();
+  refreshGrades(last.grade);
   updateSubmitLabel();
 
-  // Form submit
+  // ---- Submit ----
   const logForm = document.getElementById("logForm");
-  if (logForm) {
-    logForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
+  logForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    try {
       const fd = new FormData(e.target);
-      fd.set("category", currentCat);
+      fd.set("environment", env);
+      fd.set("discipline", discipline);
       const grade = fd.get("grade");
 
-      // Set ascent_style and attempts based on category
-      if (currentCat === "boulder") {
-        if (currentStyle === "flash") {
-          fd.set("ascent_style", "flash");
-          fd.set("attempts", "1");
-        } else if (currentStyle && currentStyle !== "") {
-          fd.set("ascent_style", "");
-          fd.set("attempts", currentStyle === "7+" ? "7" : currentStyle);
-        }
-      } else {
-        // lead
+      // ascent_style + attempts
+      if (discipline === "boulder") {
+        if (currentStyle === "flash") { fd.set("ascent_style", "flash"); fd.set("attempts", "1"); }
+        else { fd.set("ascent_style", ""); fd.set("attempts", currentStyle === "7+" ? "7" : currentStyle); }
+        fd.delete("mode");
+      } else if (discipline === "sport") {
+        fd.set("mode", mode);
         fd.set("ascent_style", currentStyle || "");
-        if (currentStyle === "rp" || currentStyle === "pp") {
-          fd.set("attempts", String(currentAttempts));
-        } else if (currentStyle === "os" || currentStyle === "flash") {
-          fd.set("attempts", "1");
-        }
+        if (["rp", "pp", "tr"].includes(currentStyle)) fd.set("attempts", String(currentAttempts));
+        else fd.set("attempts", "1");
+      } else {
+        // alpin
+        fd.delete("mode"); fd.delete("ascent_style"); fd.delete("attempts");
       }
+      // clear empty location ids so they aren't sent as ""
+      ["crag_id", "sector_id", "route_id"].forEach(k => { if (!fd.get(k)) fd.delete(k); });
+
       const r = await api("/api/log/me", { method: "POST", body: new URLSearchParams(fd) });
-      if (!r.ok) {
-        alert((await r.json()).error || "Fehler");
-        return;
+      if (!r.ok) { alert((await r.json()).error || "Fehler"); return; }
+
+      saveLastChoice(discipline === "boulder" ? "boulder" : "lead", grade);
+
+      // Reset volatile alpine inputs (keep the map instance, just clear the pin)
+      if (discipline === "alpin") {
+        alpinSection.querySelectorAll('input:not([type="hidden"]), textarea, select').forEach(el => { el.value = ""; });
+        document.getElementById("latInput").value = ""; document.getElementById("lngInput").value = "";
+        if (alpinMarker && alpinMap) { alpinMap.removeLayer(alpinMarker); alpinMarker = null; }
+        selectedPartners = []; renderPartnerSelect(); renderPartnerChips();
       }
-      saveLastChoice(currentCat, grade);
-      // Reload all dashboard data
-      const [progressR, leaderboardR, goalsR, logR] = await Promise.all([
-        api("/api/progress/me"),
-        api("/api/leaderboard/weekly"),
-        api("/api/goals/me"),
-        api("/api/log/me")
+      // Clear sport extras so they don't carry over to the next entry
+      if (discipline === "sport") {
+        const len = document.getElementById("length_m"); if (len) len.value = "";
+        const qd = document.getElementById("quickdraws"); if (qd) qd.value = "";
+      }
+
+      // Reload dashboard data
+      const [progressR, leaderboardR, goalsR, logR, meR] = await Promise.all([
+        api("/api/progress/me"), api("/api/leaderboard/weekly"),
+        api("/api/goals/me"), api("/api/log/me"), api("/api/me")
       ]);
-      const meR = await api("/api/me");
-      const me = (await meR.json()).me;
-      renderStatusCard(me, await leaderboardR.json(), await progressR.json());
-      renderProgress(await (await api("/api/progress/me")).json());
-      initInlineGoals(await goalsR.json(), await (await api("/api/progress/me")).json());
+      const progressData = await progressR.json();
+      renderStatusCard((await meR.json()).me, await leaderboardR.json(), progressData);
+      renderProgress(progressData);
+      initInlineGoals(await goalsR.json(), progressData);
       renderLogbook(await logR.json());
-    });
-  }
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+}
+
+// Render a read-only map with a single pin at the saved coordinates
+function renderPinMap(container, lat, lng) {
+  if (!container || typeof L === "undefined" || lat == null || lng == null) return;
+  container.style.display = "block";
+  if (container._map) { setTimeout(() => container._map.invalidateSize(), 100); return; }
+  const map = L.map(container, { scrollWheelZoom: false });
+  container._map = map;
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18, attribution: "© OpenStreetMap"
+  }).addTo(map);
+  map.setView([lat, lng], 13);
+  L.marker([lat, lng]).addTo(map);
+  setTimeout(() => map.invalidateSize(), 200);
 }
 
 function renderStatusCard(me, leaderboardData, progressData) {
@@ -398,58 +762,128 @@ function fmtDate(s) {
 }
 
 function fmtAscent(e) {
-  // Returns a short badge label for the ascent style/attempts
-  if (!e.ascent_style && !e.attempts) return "";
-  const STYLE_LABELS = { os: "OS", flash: "⚡ Flash", rp: "RP", pp: "PP" };
+  if (e.discipline === "alpin") return "";
+  const STYLE_LABELS = { os: "OS", flash: "⚡ Flash", rp: "RP", pp: "PP", tr: "TR" };
   if (e.category === "boulder") {
     if (e.ascent_style === "flash") return "⚡ Flash";
     if (e.attempts && Number(e.attempts) > 1) return `${e.attempts} Versuche`;
     return "";
   }
-  // lead
+  // sport (lead/toprope)
   const label = STYLE_LABELS[e.ascent_style] || "";
-  if ((e.ascent_style === "rp" || e.ascent_style === "pp") && e.attempts > 1) {
-    return `${label} / ${e.attempts}V`;
-  }
+  if (["rp", "pp", "tr"].includes(e.ascent_style) && e.attempts > 1) return `${label} / ${e.attempts}V`;
   return label;
+}
+
+function parseDetails(e) {
+  try { return e.details_json ? JSON.parse(e.details_json) : {}; } catch { return {}; }
+}
+
+const PROTECTION_LABELS = { trad: "Trad", bolt: "Bohrhaken", mixed: "Gemischt" };
+
+function alpinDetailHtml(e, det) {
+  const rows = [];
+  const add = (label, val) => { if (val) rows.push(`<div class="ad-row"><span class="ad-key">${label}</span><span class="ad-val">${val}</span></div>`); };
+  add("Tour", det.tour_name ? escapeHtml(det.tour_name) : "");
+  add("Gipfel", det.summit ? escapeHtml(det.summit) : "");
+  add("Region", det.region ? escapeHtml(det.region) : "");
+  add("Seillängen", det.pitches);
+  add("Höhenmeter", det.height_m ? `${det.height_m} hm` : "");
+  add("Zeitaufwand", det.time_spent ? escapeHtml(det.time_spent) : "");
+  add("Datum", det.climb_date ? escapeHtml(det.climb_date) : "");
+  add("Absicherung", PROTECTION_LABELS[det.protection] || "");
+  add("Verhältnisse", det.conditions ? escapeHtml(det.conditions) : "");
+  add("Zustieg", det.approach ? escapeHtml(det.approach) : "");
+  add("Abstieg", det.descent ? escapeHtml(det.descent) : "");
+  add("Partner", det.partners && det.partners.length ? det.partners.map(p => escapeHtml(p.username)).join(", ") : "");
+  const beta = det.beta ? `<div class="ad-beta"><span class="ad-key">Beta</span><div>${escapeHtml(det.beta)}</div></div>` : "";
+  const map = (det.lat != null && det.lng != null)
+    ? `<div class="ad-gpx"><div class="alpin-map" data-lat="${det.lat}" data-lng="${det.lng}" style="display:none;"></div></div>`
+    : "";
+  return `<div class="alpin-detail">${rows.join("")}${beta}${map}</div>`;
 }
 
 function logCardHtml(e, isSelf) {
   const isOutdoor = e.environment === "outdoor";
+  const isAlpin = e.discipline === "alpin";
+  const isTR = e.discipline === "sport" && e.mode === "toprope";
+  const det = parseDetails(e);
   const ascentLabel = fmtAscent(e);
+  const typeLabel = isAlpin ? "Alpin" : (e.category === "boulder" ? "Boulder" : (isTR ? "Toprope" : "Lead"));
+
+  // location / context parts
+  const locParts = [];
+  if (isAlpin) {
+    if (det.summit) locParts.push(escapeHtml(det.summit));
+    else if (det.tour_name) locParts.push(escapeHtml(det.tour_name));
+    if (det.region) locParts.push(escapeHtml(det.region));
+  } else {
+    if (e.crag_name) locParts.push(escapeHtml(e.crag_name));
+    if (e.sector_name) locParts.push(escapeHtml(e.sector_name));
+    if (e.route_name) locParts.push(escapeHtml(e.route_name));
+  }
+  const extras = [];
+  if (det.length_m) extras.push(`${det.length_m} m`);
+  if (det.quickdraws) extras.push(`${det.quickdraws} Express`);
+
+  const detailLine = [locParts.join(" · "), fmtDate(e.created_at), ...extras, e.notes ? escapeHtml(e.notes) : ""]
+    .filter(Boolean).join(" · ");
+
+  const hasAlpinDetail = isAlpin && (det.beta || det.approach || det.descent || det.conditions ||
+    det.protection || det.pitches || det.height_m || det.time_spent || det.climb_date || det.tour_name ||
+    (det.partners && det.partners.length) || (det.lat != null && det.lng != null));
+
   return `
-    <div class="log-card" data-entry-id="${e.id}">
-      <div class="log-main">
-        <div class="log-grade">
-          ${e.category === "lead" ? "Lead" : "Boulder"} ${e.grade}
-          <span class="log-env-badge ${isOutdoor ? 'outdoor' : ''}">${isOutdoor ? 'Outdoor' : 'Indoor'}</span>
-          ${ascentLabel ? `<span class="log-ascent-badge">${ascentLabel}</span>` : ""}
+    <div class="log-card-wrap">
+      <div class="log-card${hasAlpinDetail ? " log-card-expandable" : ""}" data-entry-id="${e.id}">
+        <div class="log-main">
+          <div class="log-grade">
+            ${typeLabel} ${escapeHtml(String(e.grade))}
+            <span class="log-env-badge ${isOutdoor ? 'outdoor' : ''}">${isOutdoor ? 'Outdoor' : 'Indoor'}</span>
+            ${ascentLabel ? `<span class="log-ascent-badge">${ascentLabel}</span>` : ""}
+            ${hasAlpinDetail ? `<span class="log-detail-toggle" data-toggle="${e.id}">Details ▾</span>` : ""}
+          </div>
+          <div class="log-detail">${detailLine}</div>
         </div>
-        <div class="log-detail">${fmtDate(e.created_at)}${e.notes ? " · " + escapeHtml(e.notes) : ""}</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <div class="log-count">×${e.count}</div>
+          ${isSelf ? `<button class="btn-delete-entry" data-id="${e.id}" title="Eintrag löschen">✕</button>` : ""}
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-        <div class="log-count">×${e.count}</div>
-        ${isSelf ? `<button class="btn-delete-entry" data-id="${e.id}" title="Eintrag löschen">✕</button>` : ""}
-      </div>
+      ${hasAlpinDetail ? alpinDetailHtml(e, det) : ""}
     </div>
   `;
+}
+
+// Wire up alpine detail toggles + lazy GPX map loading within a container
+function wireAlpinDetails(scope) {
+  scope.querySelectorAll(".log-detail-toggle").forEach(tog => {
+    tog.addEventListener("click", async () => {
+      const id = tog.dataset.toggle;
+      const wrap = tog.closest(".log-card-wrap");
+      const detail = wrap?.querySelector(".alpin-detail");
+      if (!detail) return;
+      const open = detail.classList.toggle("open");
+      tog.textContent = open ? "Details ▴" : "Details ▾";
+      const mapEl = detail.querySelector(".alpin-map[data-lat]");
+      if (open && mapEl && !mapEl.dataset.loaded) {
+        mapEl.dataset.loaded = "1";
+        renderPinMap(mapEl, Number(mapEl.dataset.lat), Number(mapEl.dataset.lng));
+      }
+    });
+  });
 }
 
 function renderLogbook(logData) {
   const el = document.getElementById("log");
   if (!el) return;
-
   const entries = logData.entries || [];
   if (!entries.length) {
     el.innerHTML = `<div class="empty">Noch keine Logbuch-Einträge.</div>`;
     return;
   }
-
-  el.innerHTML = `
-    <div class="log-cards">
-      ${entries.map(e => logCardHtml(e)).join("")}
-    </div>
-  `;
+  el.innerHTML = `<div class="log-cards">${entries.map(e => logCardHtml(e)).join("")}</div>`;
+  wireAlpinDetails(el);
 }
 
 // ---------- Inline Goals ----------
@@ -953,6 +1387,7 @@ function renderUserLog(entries, isSelf) {
   }
 
   el.innerHTML = `<div class="log-cards">${entries.map(e => logCardHtml(e, isSelf)).join("")}</div>`;
+  wireAlpinDetails(el);
 
   if (isSelf) {
     el.querySelectorAll(".btn-delete-entry").forEach(btn => {
@@ -975,7 +1410,8 @@ function renderUserLog(entries, isSelf) {
         const r = await api(`/api/log/me/${id}`, { method: "DELETE" });
         if (r.ok) {
           const card = el.querySelector(`.log-card[data-entry-id="${id}"]`);
-          if (card) card.remove();
+          const wrap = card ? card.closest(".log-card-wrap") : null;
+          if (wrap) wrap.remove(); else if (card) card.remove();
           if (!el.querySelector(".log-card")) {
             el.innerHTML = `<div class="empty">Keine Logbuch-Einträge.</div>`;
           }

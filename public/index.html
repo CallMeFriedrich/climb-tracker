@@ -8,6 +8,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Climb Tracker – Dashboard</title>
   <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
   <div class="container">
@@ -25,40 +27,65 @@
       </div>
     </div>
 
-    <!-- Quick Log -->
+    <!-- Status -->
+    <div class="card" style="margin-bottom:12px;">
+      <h2>Diese Woche</h2>
+      <div class="divider"></div>
+      <div id="statusCard"></div>
+    </div>
+
+    <!-- Quick Log (guided, step-by-step) -->
     <div class="card" style="margin-bottom:12px;">
       <h2>Eintragen</h2>
       <div class="divider"></div>
 
       <form id="logForm" class="form">
-        <input type="hidden" name="category" id="catValue" value="lead" />
+        <input type="hidden" name="environment" id="env" value="indoor" />
+        <input type="hidden" name="discipline" id="discValue" value="sport" />
+        <input type="hidden" name="mode" id="modeValue" value="lead" />
+        <input type="hidden" name="ascent_style" id="styleInput" value="" />
+        <input type="hidden" name="crag_id" id="cragId" value="" />
+        <input type="hidden" name="sector_id" id="sectorId" value="" />
+        <input type="hidden" name="route_id" id="routeId" value="" />
 
-        <div class="toggle-group">
-          <button type="button" class="toggle-btn" data-cat="lead">Lead</button>
-          <button type="button" class="toggle-btn" data-cat="boulder">Boulder</button>
+        <!-- Step 1: Environment -->
+        <div class="field">
+          <label class="step-label"><span class="step-num">1</span> Umgebung</label>
+          <div class="toggle-group" id="envToggle">
+            <button type="button" class="toggle-btn active" data-env="indoor">Indoor</button>
+            <button type="button" class="toggle-btn" data-env="outdoor">Outdoor</button>
+          </div>
         </div>
 
+        <!-- Step 2: Discipline -->
         <div class="field">
-          <label for="env">Umgebung</label>
-          <select id="env" name="environment">
-            <option value="indoor" selected>Indoor</option>
-            <option value="outdoor">Outdoor</option>
-          </select>
+          <label class="step-label"><span class="step-num">2</span> Disziplin</label>
+          <div class="toggle-group" id="discToggle"></div>
         </div>
 
-        <div class="field">
-          <label for="grade">Schwierigkeit</label>
+        <!-- Sport: mode lead/toprope -->
+        <div class="field" id="modeField" style="display:none;">
+          <label>Modus</label>
+          <div class="toggle-group" id="modeToggle">
+            <button type="button" class="toggle-btn active" data-mode="lead">Lead</button>
+            <button type="button" class="toggle-btn" data-mode="toprope">Toprope</button>
+          </div>
+        </div>
+
+        <!-- Grade -->
+        <div class="field" id="gradeField">
+          <label for="grade" id="gradeLabel">Schwierigkeit</label>
           <select name="grade" id="grade"></select>
         </div>
 
-        <!-- Stil-Auswahl: wird per JS befüllt je nach Lead/Boulder -->
+        <!-- Ascent style (sport + boulder) -->
         <div class="field" id="styleField">
           <label>Begehungsart</label>
           <div class="style-btns" id="styleBtns"></div>
           <p class="style-desc muted" id="styleDesc"></p>
         </div>
 
-        <!-- Versuchs-Zähler: nur bei RP/PP sichtbar -->
+        <!-- Attempts stepper (lead RP/PP, toprope TR) -->
         <div class="field" id="attemptsField" style="display:none;">
           <label>Versuche</label>
           <div class="attempts-stepper">
@@ -69,10 +96,26 @@
           <input type="hidden" name="attempts" id="attInput" value="2" />
         </div>
 
-        <input type="hidden" name="ascent_style" id="styleInput" value="" />
+        <!-- Location (crag / sector / route) — built per discipline -->
+        <div id="locationSection"></div>
 
+        <!-- Sport extras: route length + quickdraws -->
+        <div id="sportExtras" style="display:none; gap:12px;" class="form">
+          <div class="field">
+            <label for="length_m">Routenlänge (m) <span class="opt">optional</span></label>
+            <input id="length_m" name="length_m" type="number" min="0" inputmode="numeric" placeholder="z.B. 25" />
+          </div>
+          <div class="field">
+            <label for="quickdraws">Express benötigt <span class="opt">optional</span></label>
+            <input id="quickdraws" name="quickdraws" type="number" min="0" inputmode="numeric" placeholder="z.B. 12" />
+          </div>
+        </div>
+
+        <!-- Alpine section -->
+        <div id="alpinSection" style="display:none;"></div>
+
+        <!-- Mehr Optionen: count + notes -->
         <span class="expand-link" id="expandExtras">Mehr Optionen</span>
-
         <div id="extraFields" class="extra-fields">
           <div class="field">
             <label for="count">Anzahl</label>
@@ -86,13 +129,6 @@
 
         <button class="btn btn-primary" type="submit" id="submitLog">Speichern</button>
       </form>
-    </div>
-
-    <!-- Status -->
-    <div class="card" style="margin-bottom:12px;">
-      <h2>Diese Woche</h2>
-      <div class="divider"></div>
-      <div id="statusCard"></div>
     </div>
 
     <div class="grid cols-2">

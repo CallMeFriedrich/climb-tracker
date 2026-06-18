@@ -26,6 +26,18 @@ const BOULDER_OUTDOOR_GRADES = [
   "7a","7a+","7b","7b+","7c","7c+",
   "8a","8a+","8b","8b+","8c","8c+","9a"
 ];
+// UIAA scale for alpine routes (not part of the weekly score)
+const UIAA_GRADES = [
+  "I","II","III","III+","IV-","IV","IV+","V-","V","V+",
+  "VI-","VI","VI+","VII-","VII","VII+","VIII-","VIII","VIII+",
+  "IX-","IX","IX+","X-","X","X+","XI-","XI"
+];
+
+const DISCIPLINES = ["boulder", "sport", "alpin"];
+const MODES = ["lead", "toprope"];
+// Crag "kinds" decouple the location list from the climbing discipline:
+// indoor halls are shared between indoor sport & boulder, outdoor crags stay per discipline.
+const CRAG_KINDS = ["indoor", "sport", "boulder", "alpin"];
 
 function isValidGrade(category, grade, environment) {
   if (category === "lead") return LEAD_GRADES.includes(grade);
@@ -34,6 +46,24 @@ function isValidGrade(category, grade, environment) {
     return BOULDER_GRADES.includes(String(grade));
   }
   return false;
+}
+
+// Validate a grade for the new discipline-based entry flow
+function gradeValidForEntry(discipline, environment, grade) {
+  const g = String(grade);
+  if (discipline === "alpin") return UIAA_GRADES.includes(g);
+  if (discipline === "sport") return LEAD_GRADES.includes(g);
+  if (discipline === "boulder") {
+    return environment === "outdoor"
+      ? BOULDER_OUTDOOR_GRADES.includes(g)
+      : BOULDER_GRADES.includes(g);
+  }
+  return false;
+}
+
+// Map a discipline to the scoring grade-family kept in log_entries.category
+function categoryForDiscipline(discipline) {
+  return discipline === "boulder" ? "boulder" : "lead";
 }
 
 // -------------------- Weights (for performance score) --------------------
@@ -101,9 +131,69 @@ try {
   // ignore if column already exists
 }
 
+// ---- New logging model: discipline / mode / crowdsourced locations / details ----
+try { db.exec("ALTER TABLE log_entries ADD COLUMN discipline TEXT;"); } catch(e) {}
+try { db.exec("ALTER TABLE log_entries ADD COLUMN mode TEXT;"); } catch(e) {}
+try { db.exec("ALTER TABLE log_entries ADD COLUMN crag_id INTEGER;"); } catch(e) {}
+try { db.exec("ALTER TABLE log_entries ADD COLUMN sector_id INTEGER;"); } catch(e) {}
+try { db.exec("ALTER TABLE log_entries ADD COLUMN route_id INTEGER;"); } catch(e) {}
+try { db.exec("ALTER TABLE log_entries ADD COLUMN details_json TEXT;"); } catch(e) {}
+
+// Backfill discipline/mode for pre-existing entries so scoring stays consistent
+try { db.exec("UPDATE log_entries SET discipline = CASE WHEN category='boulder' THEN 'boulder' ELSE 'sport' END WHERE discipline IS NULL;"); } catch(e) {}
+try { db.exec("UPDATE log_entries SET mode = 'lead' WHERE category='lead' AND mode IS NULL;"); } catch(e) {}
+
+// Crowdsourced location tables: crag -> sector -> route -> entry
+db.exec(`
+  CREATE TABLE IF NOT EXISTS crags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    discipline TEXT NOT NULL DEFAULT 'sport',
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(name, discipline) ON CONFLICT IGNORE
+  );
+  CREATE TABLE IF NOT EXISTS sectors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    crag_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (crag_id) REFERENCES crags(id) ON DELETE CASCADE,
+    UNIQUE(crag_id, name) ON CONFLICT IGNORE
+  );
+  CREATE TABLE IF NOT EXISTS routes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    crag_id INTEGER NOT NULL,
+    sector_id INTEGER,
+    name TEXT NOT NULL,
+    grade TEXT,
+    length_m INTEGER,
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (crag_id) REFERENCES crags(id) ON DELETE CASCADE,
+    FOREIGN KEY (sector_id) REFERENCES sectors(id) ON DELETE CASCADE,
+    UNIQUE(sector_id, name) ON CONFLICT IGNORE
+  );
+  CREATE INDEX IF NOT EXISTS idx_sectors_crag ON sectors(crag_id);
+  CREATE INDEX IF NOT EXISTS idx_routes_sector ON routes(sector_id);
+  CREATE INDEX IF NOT EXISTS idx_routes_crag ON routes(crag_id);
+`);
+
+// Use case-insensitive uniqueness for crowdsourced names (dedupe "Frankenjura" vs "frankenjura")
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_crags_name ON crags(lower(name), discipline);
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_sectors_name ON sectors(crag_id, lower(name));
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_routes_name ON routes(sector_id, lower(name));
+`);
+
+// Directory for uploaded GPX tracks (alpine tours)
+const GPX_DIR = path.join(__dirname, "data", "gpx");
+fs.mkdirSync(GPX_DIR, { recursive: true });
+
 // -------------------- Middlewares --------------------
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "8mb" }));        // larger limit for inline GPX track uploads
+app.use(express.urlencoded({ extended: true, limit: "8mb" }));
 const sessionDb = new Database(path.join(__dirname, "data", "sessions.db"));
 app.use(session({
   secret: process.env.SESSION_SECRET || "CHANGE_ME_TO_A_LONG_RANDOM_SECRET",
@@ -255,8 +345,9 @@ app.get("/api/leaderboard/weekly", requireAuth, (req, res) => {
       COALESCE(SUM(CASE WHEN l.category='lead' THEN l.count END), 0) AS lead_count,
       COALESCE(SUM(CASE WHEN l.category='boulder' THEN l.count END), 0) AS boulder_count,
       COALESCE(SUM(l.count), 0) AS total_count,
-      COALESCE(SUM(
+      ROUND(COALESCE(SUM(
         l.count *
+        (CASE WHEN l.mode='toprope' THEN 0.5 ELSE 1 END) *
         CASE
           WHEN l.category='lead' THEN
             CASE l.grade
@@ -312,11 +403,12 @@ app.get("/api/leaderboard/weekly", requireAuth, (req, res) => {
             END
           ELSE 0
         END
-      ), 0) AS score
+      ), 0), 1) AS score
     FROM users u
     LEFT JOIN log_entries l
       ON l.user_id = u.id
       AND datetime(l.created_at) >= datetime(?)
+      AND COALESCE(l.discipline,'') != 'alpin'
     WHERE u.is_admin = 0
     GROUP BY u.id
     ORDER BY score DESC, total_count DESC, u.username ASC
@@ -370,56 +462,258 @@ app.get("/api/goals/user/:id", requireAuth, (req, res) => {
   res.json({ goals: rows });
 });
 
-// -------------------- Logbook --------------------
-const VALID_ASCENT_STYLES = ["os", "flash", "rp", "pp"];
-
-app.post("/api/log/me", requireAuth, (req, res) => {
-  const { category, grade, count, notes, environment, ascent_style, attempts } = req.body;
-
-  if (!["lead", "boulder"].includes(category)) return res.status(400).json({ error: "Bad category" });
-
-  const env = String(environment || "indoor");
-  if (!["indoor", "outdoor"].includes(env)) return res.status(400).json({ error: "Bad environment" });
-
-  const g = String(grade);
-  const c = Number(count);
-
-  if (!isValidGrade(category, g, env)) return res.status(400).json({ error: "Bad grade" });
-  if (!Number.isInteger(c) || c < 1) return res.status(400).json({ error: "Bad count" });
-
-  const style = ascent_style && VALID_ASCENT_STYLES.includes(ascent_style) ? ascent_style : null;
-  const att = attempts ? Math.max(1, Math.floor(Number(attempts))) : null;
-
-  db.prepare(
-    "INSERT INTO log_entries (user_id, category, grade, count, notes, environment, ascent_style, attempts) VALUES (?,?,?,?,?,?,?,?)"
-  ).run(currentUserId(req), category, g, c, (notes || "").toString().slice(0, 500), env, style, att);
-
-  res.json({ ok: true });
+// -------------------- Crowdsourced locations (crag -> sector -> route) --------------------
+// Grade lists for the client (single source of truth)
+app.get("/api/grades", requireAuth, (req, res) => {
+  res.json({
+    leadGrades: LEAD_GRADES,
+    boulderGrades: BOULDER_GRADES,
+    boulderOutdoorGrades: BOULDER_OUTDOOR_GRADES,
+    uiaaGrades: UIAA_GRADES
+  });
 });
 
+// List crags (optionally filtered by discipline)
+app.get("/api/crags", requireAuth, (req, res) => {
+  const discipline = req.query.discipline ? String(req.query.discipline) : null;
+  const rows = discipline
+    ? db.prepare("SELECT id, name, discipline FROM crags WHERE discipline=? ORDER BY name COLLATE NOCASE").all(discipline)
+    : db.prepare("SELECT id, name, discipline FROM crags ORDER BY name COLLATE NOCASE").all();
+  res.json({ crags: rows });
+});
+
+// Create (or reuse existing) crag — crowdsourced, case-insensitive dedupe
+app.post("/api/crags", requireAuth, (req, res) => {
+  const name = String(req.body.name || "").trim().slice(0, 120);
+  const discipline = String(req.body.discipline || "sport");
+  if (name.length < 1) return res.status(400).json({ error: "Name required" });
+  if (!CRAG_KINDS.includes(discipline)) return res.status(400).json({ error: "Bad discipline" });
+
+  let row = db.prepare("SELECT id, name, discipline FROM crags WHERE lower(name)=lower(?) AND discipline=?").get(name, discipline);
+  if (!row) {
+    db.prepare("INSERT OR IGNORE INTO crags (name, discipline, created_by) VALUES (?,?,?)").run(name, discipline, currentUserId(req));
+    row = db.prepare("SELECT id, name, discipline FROM crags WHERE lower(name)=lower(?) AND discipline=?").get(name, discipline);
+  }
+  res.json({ crag: row });
+});
+
+// List sectors of a crag
+app.get("/api/crags/:id/sectors", requireAuth, (req, res) => {
+  const cragId = Number(req.params.id);
+  if (!Number.isInteger(cragId)) return res.status(400).json({ error: "Bad crag id" });
+  const rows = db.prepare("SELECT id, name FROM sectors WHERE crag_id=? ORDER BY name COLLATE NOCASE").all(cragId);
+  res.json({ sectors: rows });
+});
+
+// Create (or reuse) sector within a crag
+app.post("/api/sectors", requireAuth, (req, res) => {
+  const cragId = Number(req.body.crag_id);
+  const name = String(req.body.name || "").trim().slice(0, 120);
+  if (!Number.isInteger(cragId)) return res.status(400).json({ error: "Bad crag id" });
+  if (name.length < 1) return res.status(400).json({ error: "Name required" });
+  const crag = db.prepare("SELECT id FROM crags WHERE id=?").get(cragId);
+  if (!crag) return res.status(404).json({ error: "Crag not found" });
+
+  let row = db.prepare("SELECT id, name FROM sectors WHERE crag_id=? AND lower(name)=lower(?)").get(cragId, name);
+  if (!row) {
+    db.prepare("INSERT OR IGNORE INTO sectors (crag_id, name, created_by) VALUES (?,?,?)").run(cragId, name, currentUserId(req));
+    row = db.prepare("SELECT id, name FROM sectors WHERE crag_id=? AND lower(name)=lower(?)").get(cragId, name);
+  }
+  res.json({ sector: row });
+});
+
+// List routes of a sector
+app.get("/api/sectors/:id/routes", requireAuth, (req, res) => {
+  const sectorId = Number(req.params.id);
+  if (!Number.isInteger(sectorId)) return res.status(400).json({ error: "Bad sector id" });
+  const rows = db.prepare("SELECT id, name, grade, length_m FROM routes WHERE sector_id=? ORDER BY name COLLATE NOCASE").all(sectorId);
+  res.json({ routes: rows });
+});
+
+// Create (or reuse) route within a sector
+app.post("/api/routes", requireAuth, (req, res) => {
+  const cragId = Number(req.body.crag_id);
+  const sectorId = Number(req.body.sector_id);
+  const name = String(req.body.name || "").trim().slice(0, 120);
+  const grade = req.body.grade ? String(req.body.grade).slice(0, 12) : null;
+  const lengthM = req.body.length_m ? Math.max(0, Math.floor(Number(req.body.length_m))) : null;
+  if (!Number.isInteger(cragId)) return res.status(400).json({ error: "Bad crag id" });
+  if (!Number.isInteger(sectorId)) return res.status(400).json({ error: "Bad sector id" });
+  if (name.length < 1) return res.status(400).json({ error: "Name required" });
+  const sector = db.prepare("SELECT id FROM sectors WHERE id=? AND crag_id=?").get(sectorId, cragId);
+  if (!sector) return res.status(404).json({ error: "Sector not found" });
+
+  let row = db.prepare("SELECT id, name, grade, length_m FROM routes WHERE sector_id=? AND lower(name)=lower(?)").get(sectorId, name);
+  if (!row) {
+    db.prepare("INSERT OR IGNORE INTO routes (crag_id, sector_id, name, grade, length_m, created_by) VALUES (?,?,?,?,?,?)")
+      .run(cragId, sectorId, name, grade, lengthM, currentUserId(req));
+    row = db.prepare("SELECT id, name, grade, length_m FROM routes WHERE sector_id=? AND lower(name)=lower(?)").get(sectorId, name);
+  }
+  res.json({ route: row });
+});
+
+// -------------------- Logbook --------------------
+const VALID_ASCENT_STYLES = ["os", "flash", "rp", "pp", "tr"];
+
+// Build a safe details_json object from request body, per discipline
+function buildDetails(discipline, body) {
+  const d = {};
+  const num = (v) => (v === "" || v == null || isNaN(Number(v))) ? null : Number(v);
+  const str = (v, max = 500) => (v == null ? null : String(v).slice(0, max)) || null;
+
+  if (discipline === "sport") {
+    if (num(body.length_m) != null) d.length_m = Math.max(0, Math.floor(num(body.length_m)));
+    if (num(body.quickdraws) != null) d.quickdraws = Math.max(0, Math.floor(num(body.quickdraws)));
+  } else if (discipline === "alpin") {
+    d.tour_name   = str(body.tour_name, 160);
+    d.summit      = str(body.summit, 120);
+    d.region      = str(body.region, 120);
+    d.pitches     = num(body.pitches) != null ? Math.max(0, Math.floor(num(body.pitches))) : null;
+    d.height_m    = num(body.height_m) != null ? Math.max(0, Math.floor(num(body.height_m))) : null;
+    d.time_spent  = str(body.time_spent, 60);
+    d.climb_date  = str(body.climb_date, 30);
+    d.protection  = ["trad","bolt","mixed"].includes(body.protection) ? body.protection : null;
+    d.approach    = str(body.approach, 1000);
+    d.descent     = str(body.descent, 1000);
+    d.conditions  = str(body.conditions, 1000);
+    d.beta        = str(body.beta, 2000);
+    // Map coordinates (pin)
+    const lat = num(body.lat), lng = num(body.lng);
+    if (lat != null && lng != null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      d.lat = Number(lat.toFixed(6));
+      d.lng = Number(lng.toFixed(6));
+    }
+    // Climbing partners (must be existing non-admin users)
+    if (body.partner_ids) {
+      const ids = String(body.partner_ids).split(",").map(x => Number(x)).filter(Number.isInteger);
+      if (ids.length) {
+        const ph = ids.map(() => "?").join(",");
+        const rows = db.prepare(`SELECT id, username FROM users WHERE id IN (${ph}) AND is_admin=0`).all(...ids);
+        if (rows.length) d.partners = rows.map(r => ({ id: r.id, username: r.username }));
+      }
+    }
+    // strip empty keys
+    for (const k of Object.keys(d)) if (d[k] == null) delete d[k];
+  }
+  return Object.keys(d).length ? JSON.stringify(d) : null;
+}
+
+app.post("/api/log/me", requireAuth, (req, res) => {
+  const userId = currentUserId(req);
+  const b = req.body;
+
+  // ---- Discipline + environment ----
+  const env = String(b.environment || "indoor");
+  if (!["indoor", "outdoor"].includes(env)) return res.status(400).json({ error: "Bad environment" });
+
+  let discipline = String(b.discipline || "");
+  // Backwards-compat: old clients send category (lead/boulder) without discipline
+  if (!discipline && (b.category === "lead" || b.category === "boulder")) {
+    discipline = b.category === "boulder" ? "boulder" : "sport";
+  }
+  if (!DISCIPLINES.includes(discipline)) return res.status(400).json({ error: "Bad discipline" });
+  if (env === "indoor" && discipline === "alpin") return res.status(400).json({ error: "Alpin is outdoor only" });
+
+  const category = categoryForDiscipline(discipline);
+
+  // ---- Grade + count ----
+  const g = String(b.grade);
+  const c = Number(b.count);
+  if (!gradeValidForEntry(discipline, env, g)) return res.status(400).json({ error: "Bad grade" });
+  if (!Number.isInteger(c) || c < 1) return res.status(400).json({ error: "Bad count" });
+
+  // ---- Mode (sport only) ----
+  let mode = null;
+  if (discipline === "sport") {
+    mode = MODES.includes(b.mode) ? b.mode : "lead";
+  }
+
+  // ---- Ascent style + attempts ----
+  let style = (b.ascent_style && VALID_ASCENT_STYLES.includes(b.ascent_style)) ? b.ascent_style : null;
+  // PP only makes sense for sport lead
+  if (style === "pp" && !(discipline === "sport" && mode === "lead")) style = null;
+  const att = b.attempts ? Math.max(1, Math.floor(Number(b.attempts))) : null;
+
+  // ---- Crowdsourced location (validate relationships) ----
+  let cragId = null, sectorId = null, routeId = null;
+  if (b.crag_id) {
+    const crag = db.prepare("SELECT id FROM crags WHERE id=?").get(Number(b.crag_id));
+    if (crag) cragId = crag.id;
+  }
+  if (cragId && b.sector_id && discipline === "sport") {
+    const sec = db.prepare("SELECT id FROM sectors WHERE id=? AND crag_id=?").get(Number(b.sector_id), cragId);
+    if (sec) sectorId = sec.id;
+  }
+  if (sectorId && b.route_id && discipline === "sport") {
+    const rt = db.prepare("SELECT id FROM routes WHERE id=? AND sector_id=?").get(Number(b.route_id), sectorId);
+    if (rt) routeId = rt.id;
+  }
+
+  // ---- Details (length/quickdraws/alpine metadata/beta) ----
+  const details = buildDetails(discipline, b);
+
+  const info = db.prepare(`
+    INSERT INTO log_entries
+      (user_id, category, grade, count, notes, environment, ascent_style, attempts,
+       discipline, mode, crag_id, sector_id, route_id, details_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(
+    userId, category, g, c, (b.notes || "").toString().slice(0, 500), env, style, att,
+    discipline, mode, cragId, sectorId, routeId, details
+  );
+
+  // ---- Optional GPX track (alpine): saved as a file, referenced from details ----
+  if (discipline === "alpin" && b.gpx && typeof b.gpx === "string" && b.gpx.includes("<")) {
+    try {
+      const fname = `entry-${info.lastInsertRowid}.gpx`;
+      fs.writeFileSync(path.join(GPX_DIR, fname), String(b.gpx).slice(0, 8 * 1024 * 1024), "utf8");
+      const det = details ? JSON.parse(details) : {};
+      det.gpx = fname;
+      db.prepare("UPDATE log_entries SET details_json=? WHERE id=?").run(JSON.stringify(det), info.lastInsertRowid);
+    } catch (e) { console.error("GPX save failed:", e.message); }
+  }
+
+  res.json({ ok: true, id: info.lastInsertRowid });
+});
+
+// Download a stored GPX track for an entry (any logged-in user may view)
+app.get("/api/log/:id/gpx", requireAuth, (req, res) => {
+  const entryId = Number(req.params.id);
+  if (!Number.isInteger(entryId)) return res.status(400).json({ error: "Bad id" });
+  const row = db.prepare("SELECT details_json FROM log_entries WHERE id=?").get(entryId);
+  if (!row || !row.details_json) return res.status(404).json({ error: "Not found" });
+  let det;
+  try { det = JSON.parse(row.details_json); } catch { return res.status(404).json({ error: "Not found" }); }
+  if (!det.gpx) return res.status(404).json({ error: "No GPX" });
+  const file = path.join(GPX_DIR, path.basename(det.gpx));
+  if (!fs.existsSync(file)) return res.status(404).json({ error: "Not found" });
+  res.download(file, det.gpx);
+});
+
+const LOG_SELECT = `
+  SELECT
+    l.id, l.category, l.grade, l.count, l.notes, l.environment,
+    l.ascent_style, l.attempts, l.created_at,
+    l.discipline, l.mode, l.crag_id, l.sector_id, l.route_id, l.details_json,
+    c.name AS crag_name, s.name AS sector_name, r.name AS route_name
+  FROM log_entries l
+  LEFT JOIN crags c   ON c.id = l.crag_id
+  LEFT JOIN sectors s ON s.id = l.sector_id
+  LEFT JOIN routes r  ON r.id = l.route_id
+  WHERE l.user_id=?
+  ORDER BY datetime(l.created_at) DESC
+  LIMIT 50
+`;
+
 app.get("/api/log/me", requireAuth, (req, res) => {
-  const rows = db.prepare(`
-    SELECT id, category, grade, count, notes, environment, ascent_style, attempts, created_at
-    FROM log_entries
-    WHERE user_id=?
-    ORDER BY datetime(created_at) DESC
-    LIMIT 50
-  `).all(currentUserId(req));
+  const rows = db.prepare(LOG_SELECT).all(currentUserId(req));
   res.json({ entries: rows });
 });
 
 app.get("/api/log/user/:id", requireAuth, (req, res) => {
   const userId = Number(req.params.id);
   if (!Number.isInteger(userId)) return res.status(400).json({ error: "Bad user id" });
-
-  const rows = db.prepare(`
-    SELECT id, category, grade, count, notes, environment, ascent_style, attempts, created_at
-    FROM log_entries
-    WHERE user_id=?
-    ORDER BY datetime(created_at) DESC
-    LIMIT 50
-  `).all(userId);
-
+  const rows = db.prepare(LOG_SELECT).all(userId);
   res.json({ entries: rows });
 });
 
