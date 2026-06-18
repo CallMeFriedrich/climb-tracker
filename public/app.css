@@ -1178,3 +1178,23 @@ input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:f
   flex-wrap: wrap;
 }
 .map-actions .btn{ flex: 1; padding: 9px 12px; font-size: 13px; }
+
+/* ===== TOPO ===== */
+.topo-sector{ margin-bottom: 6px; }
+.topo-sec-head{ padding: 8px 0; }
+.topo-sec-head .chevron{ transition: transform 0.2s ease; }
+.topo-sec-head.open .chevron{ transform: rotate(180deg); }
+.topo-route{ display: grid; gap: 0; }
+.topo-remarks{
+  margin: 2px 0 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  display: grid;
+  gap: 8px;
+}
+.topo-remark{ font-size: 13px; }
+.topo-remark .ad-key{ width: auto; display: inline; }
+.topo-remark .td-date{ margin-left: 6px; }
+.topo-remark > div{ margin-top: 2px; white-space: pre-wrap; }

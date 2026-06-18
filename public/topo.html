@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Climb Tracker – Topos</title>
+  <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <a class="brand" href="index.html">
+        <div class="title">Climb Tracker</div>
+        <div class="subtitle">Topos</div>
+      </a>
+      <div class="nav">
+        <a class="pill" href="index.html">Dashboard</a>
+        <a class="pill" href="community.html">Community</a>
+      </div>
+    </div>
+
+    <div id="topoRoot"></div>
+  </div>
+
+  <script src="app.js?v=2026-06-18"></script>
+  <script>
+    initTopo();
+  </script>
+</body>
+</html>

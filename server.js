@@ -187,11 +187,43 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS ux_routes_name ON routes(sector_id, lower(name));
 `);
 
+// Crag coordinates (for the topo map) — crowdsourced, nullable
+try { db.exec("ALTER TABLE crags ADD COLUMN lat REAL;"); } catch (e) {}
+try { db.exec("ALTER TABLE crags ADD COLUMN lng REAL;"); } catch (e) {}
+
+// Per-user IP log — admin-visible only, invisible to the user themselves
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_ips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    ip TEXT NOT NULL,
+    first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen  TEXT NOT NULL DEFAULT (datetime('now')),
+    hits INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(user_id, ip)
+  );
+  CREATE INDEX IF NOT EXISTS idx_user_ips_user ON user_ips(user_id);
+`);
+
 // Directory for uploaded GPX tracks (alpine tours)
 const GPX_DIR = path.join(__dirname, "data", "gpx");
 fs.mkdirSync(GPX_DIR, { recursive: true });
 
 // -------------------- Middlewares --------------------
+// Behind a reverse proxy (TLS termination): trust the first hop so req.ip and
+// req.secure / x-forwarded-proto reflect the real client.
+app.set("trust proxy", 1);
+
+// Optional HTTPS enforcement — only active when FORCE_HTTPS=1 (i.e. once a TLS
+// proxy is in front). Off by default so plain-HTTP access keeps working.
+if (process.env.FORCE_HTTPS === "1") {
+  app.use((req, res, next) => {
+    if (req.secure || req.headers["x-forwarded-proto"] === "https") return next();
+    return res.redirect(308, "https://" + req.headers.host + req.originalUrl);
+  });
+}
+
 app.use(express.json({ limit: "8mb" }));        // larger limit for inline GPX track uploads
 app.use(express.urlencoded({ extended: true, limit: "8mb" }));
 const sessionDb = new Database(path.join(__dirname, "data", "sessions.db"));
@@ -202,11 +234,37 @@ app.use(session({
   store: new SqliteStore({ client: sessionDb }),
   cookie: {
     httpOnly: true,
+    sameSite: "lax",                              // mitigates CSRF, safe over HTTP
+    secure: process.env.SECURE_COOKIES === "1",   // enable once served over HTTPS
     // maxAge wird per Login dynamisch gesetzt ("Eingeloggt bleiben")
-    // secure: true, // enable when using HTTPS
-    // sameSite: "lax"
   }
 }));
+
+// -------------------- IP logging (admin-visible only) --------------------
+const ipUpsert = db.prepare(`
+  INSERT INTO user_ips (user_id, ip, first_seen, last_seen, hits)
+  VALUES (?, ?, datetime('now'), datetime('now'), 1)
+  ON CONFLICT(user_id, ip) DO UPDATE SET last_seen=datetime('now'), hits=hits+1
+`);
+function clientIp(req) {
+  return String(req.ip || "").replace(/^::ffff:/, "") || "unknown";
+}
+function recordIp(userId, ip) {
+  try { if (userId && ip) ipUpsert.run(userId, ip); } catch (e) {}
+}
+// Record the IP of authenticated requests, but only when it changes (cheap)
+app.use((req, res, next) => {
+  const uid = req.session && req.session.userId;
+  if (uid) {
+    const ip = clientIp(req);
+    if (req.session.lastIp !== ip) {
+      recordIp(uid, ip);
+      req.session.lastIp = ip;
+    }
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // -------------------- Auth helpers --------------------
@@ -236,6 +294,9 @@ app.post("/api/register", async (req, res) => {
   const info = db.prepare("INSERT INTO users (username, password_hash) VALUES (?,?)")
     .run(String(username), hash);
   req.session.userId = info.lastInsertRowid;
+  const ip = clientIp(req);
+  recordIp(info.lastInsertRowid, ip);
+  req.session.lastIp = ip;
   res.json({ ok: true });
 });
 
@@ -247,6 +308,9 @@ app.post("/api/login", async (req, res) => {
   const ok = await bcrypt.compare(String(password), user.password_hash);
   if (!ok) return res.status(401).json({ error: "Invalid credentials" });
   req.session.userId = user.id;
+  const ip = clientIp(req);
+  recordIp(user.id, ip);
+  req.session.lastIp = ip;
   // "Eingeloggt bleiben": 30 Tage; sonst Session-Cookie (läuft beim Browser-Schließen ab)
   if (remember === "1") {
     req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
@@ -550,6 +614,80 @@ app.post("/api/routes", requireAuth, (req, res) => {
     row = db.prepare("SELECT id, name, grade, length_m FROM routes WHERE sector_id=? AND lower(name)=lower(?)").get(sectorId, name);
   }
   res.json({ route: row });
+});
+
+// Set / update a crag's map position (crowdsourced)
+app.post("/api/crags/:id/location", requireAuth, (req, res) => {
+  const cragId = Number(req.params.id);
+  if (!Number.isInteger(cragId)) return res.status(400).json({ error: "Bad crag id" });
+  const lat = Number(req.body.lat), lng = Number(req.body.lng);
+  if (!isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return res.status(400).json({ error: "Bad coordinates" });
+  }
+  const info = db.prepare("UPDATE crags SET lat=?, lng=? WHERE id=?")
+    .run(Number(lat.toFixed(6)), Number(lng.toFixed(6)), cragId);
+  if (info.changes === 0) return res.status(404).json({ error: "Crag not found" });
+  res.json({ ok: true });
+});
+
+// -------------------- Topo (browseable crag/sector/route directory) --------------------
+app.get("/api/topo/crags", requireAuth, (req, res) => {
+  const crags = db.prepare(`
+    SELECT c.id, c.name, c.discipline, c.lat, c.lng,
+      (SELECT COUNT(*) FROM sectors s WHERE s.crag_id = c.id) AS sector_count,
+      (SELECT COUNT(*) FROM routes  r WHERE r.crag_id = c.id) AS route_count
+    FROM crags c
+    ORDER BY c.discipline, c.name COLLATE NOCASE
+  `).all();
+  res.json({ crags });
+});
+
+app.get("/api/topo/crag/:id", requireAuth, (req, res) => {
+  const cragId = Number(req.params.id);
+  if (!Number.isInteger(cragId)) return res.status(400).json({ error: "Bad crag id" });
+
+  const crag = db.prepare("SELECT id, name, discipline, lat, lng FROM crags WHERE id=?").get(cragId);
+  if (!crag) return res.status(404).json({ error: "Crag not found" });
+
+  const sectors = db.prepare("SELECT id, name FROM sectors WHERE crag_id=? ORDER BY name COLLATE NOCASE").all(cragId);
+  const routes = db.prepare("SELECT id, sector_id, name, grade, length_m FROM routes WHERE crag_id=? ORDER BY name COLLATE NOCASE").all(cragId);
+
+  // Per-route stats + remarks (from log entries that reference the route)
+  const statsByRoute = {};
+  const remarksByRoute = {};
+  if (routes.length) {
+    const ph = routes.map(() => "?").join(",");
+    const ids = routes.map(r => r.id);
+    for (const s of db.prepare(`
+      SELECT route_id, SUM(count) AS ascents, COUNT(DISTINCT user_id) AS climbers
+      FROM log_entries WHERE route_id IN (${ph}) GROUP BY route_id
+    `).all(...ids)) {
+      statsByRoute[s.route_id] = { ascents: s.ascents || 0, climbers: s.climbers || 0 };
+    }
+    for (const r of db.prepare(`
+      SELECT l.route_id, l.notes, l.created_at, u.username
+      FROM log_entries l JOIN users u ON u.id = l.user_id
+      WHERE l.route_id IN (${ph}) AND l.notes IS NOT NULL AND TRIM(l.notes) != ''
+      ORDER BY datetime(l.created_at) DESC
+    `).all(...ids)) {
+      (remarksByRoute[r.route_id] ||= []).push({ username: r.username, notes: r.notes, created_at: r.created_at });
+    }
+  }
+
+  const decorate = (r) => ({
+    id: r.id, name: r.name, grade: r.grade, length_m: r.length_m,
+    ascents: statsByRoute[r.id]?.ascents || 0,
+    climbers: statsByRoute[r.id]?.climbers || 0,
+    remarks: remarksByRoute[r.id] || []
+  });
+
+  const sectorList = sectors.map(s => ({
+    id: s.id, name: s.name,
+    routes: routes.filter(r => r.sector_id === s.id).map(decorate)
+  }));
+  const looseRoutes = routes.filter(r => !r.sector_id).map(decorate);
+
+  res.json({ crag, sectors: sectorList, looseRoutes });
 });
 
 // -------------------- Logbook --------------------
@@ -888,6 +1026,16 @@ app.post("/api/admin/delete-user/:id", requireAdmin, (req, res) => {
 
   db.prepare("DELETE FROM users WHERE id=?").run(userId);
   res.json({ ok: true });
+});
+
+// Admin: view the IP addresses recorded for a user (invisible to the user)
+app.get("/api/admin/user-ips/:id", requireAdmin, (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId)) return res.status(400).json({ error: "Bad user id" });
+  const ips = db.prepare(
+    "SELECT ip, first_seen, last_seen, hits FROM user_ips WHERE user_id=? ORDER BY datetime(last_seen) DESC"
+  ).all(userId);
+  res.json({ ips });
 });
 
 // -------------------- Admin Backup --------------------

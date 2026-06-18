@@ -1184,6 +1184,21 @@ async function initProfile() {
     }
   }
 
+  // Admin: IP addresses (visible to admins on any profile, including their own)
+  if (isAdmin) {
+    const ipCard = document.getElementById("adminIps");
+    if (ipCard) {
+      ipCard.style.display = "block";
+      try {
+        const ipData = await (await api(`/api/admin/user-ips/${id}`)).json();
+        renderUserIps(ipData.ips || []);
+      } catch {
+        const el = document.getElementById("ipList");
+        if (el) el.innerHTML = `<div class="empty">Konnte IPs nicht laden.</div>`;
+      }
+    }
+  }
+
   // Admin actions
   const adminActions = document.getElementById("adminActions");
   const showAdminActions = isAdmin && !isSelf;
@@ -1240,6 +1255,32 @@ async function initProfile() {
       };
     }
   }
+}
+
+function renderUserIps(ips) {
+  const el = document.getElementById("ipList");
+  if (!el) return;
+  if (!ips.length) {
+    el.innerHTML = `<div class="empty">Noch keine IP-Adressen erfasst.</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="table-scroll">
+      <table class="table">
+        <thead><tr><th>IP-Adresse</th><th>Zuletzt</th><th>Zuerst</th><th>Anfragen</th></tr></thead>
+        <tbody>
+          ${ips.map(r => `
+            <tr>
+              <td style="font-weight:700;">${escapeHtml(r.ip)}</td>
+              <td class="td-date">${fmtDate(r.last_seen)}</td>
+              <td class="td-date">${fmtDate(r.first_seen)}</td>
+              <td>${r.hits}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function renderActivityGraph(activity) {
@@ -1424,4 +1465,192 @@ function renderUserLog(entries, isSelf) {
       });
     });
   }
+}
+
+// ---------- Topo (browseable crag/sector/route directory) ----------
+const TOPO_DISC_LABELS = { sport: "Klettergärten", boulder: "Boulder-Gebiete", indoor: "Hallen", alpin: "Alpin" };
+
+async function initTopo() {
+  const root = document.getElementById("topoRoot");
+  if (!root) return;
+  const cragId = new URLSearchParams(location.search).get("crag");
+  if (cragId) return initTopoDetail(root, cragId);
+  return initTopoList(root);
+}
+
+async function initTopoList(root) {
+  root.innerHTML = `
+    <div class="card">
+      <h1>Topos</h1>
+      <p class="muted">Alle bekannten Klettergärten, Sektoren und Routen – inkl. Länge, Bemerkungen und Karte.</p>
+      <div class="divider"></div>
+      <input id="topoSearch" placeholder="Klettergarten suchen…" autocomplete="off" />
+      <div id="topoGroups" style="margin-top:14px;">Lädt…</div>
+    </div>`;
+
+  let crags = [];
+  try { crags = (await (await api("/api/topo/crags")).json()).crags || []; } catch {}
+  const groupsEl = document.getElementById("topoGroups");
+
+  function render(filter) {
+    const f = (filter || "").trim().toLowerCase();
+    const shown = crags.filter(c => !f || c.name.toLowerCase().includes(f));
+    if (!shown.length) { groupsEl.innerHTML = `<div class="empty">Keine Klettergärten gefunden.</div>`; return; }
+    const order = ["sport", "boulder", "indoor", "alpin"];
+    groupsEl.innerHTML = order.filter(d => shown.some(c => c.discipline === d)).map(d => `
+      <div style="margin-bottom:16px;">
+        <div class="badge" style="margin-bottom:8px;">${TOPO_DISC_LABELS[d] || d}</div>
+        <div class="user-list">
+          ${shown.filter(c => c.discipline === d).map(c => `
+            <a class="user-row" href="topo.html?crag=${c.id}">
+              <div class="user-info">
+                <div class="user-name">${escapeHtml(c.name)} ${(c.lat != null && c.lng != null) ? '<span title="Position bekannt">📍</span>' : ''}</div>
+                <div class="user-bio">${c.sector_count} Sektoren · ${c.route_count} Routen</div>
+              </div>
+              <span class="pill" style="flex-shrink:0">Ansehen →</span>
+            </a>`).join("")}
+        </div>
+      </div>`).join("");
+  }
+  render("");
+  document.getElementById("topoSearch")?.addEventListener("input", e => render(e.target.value));
+}
+
+async function initTopoDetail(root, cragId) {
+  let data;
+  try { data = await (await api(`/api/topo/crag/${cragId}`)).json(); } catch {}
+  if (!data || !data.crag) {
+    root.innerHTML = `<div class="card"><a class="expand-link" href="topo.html">← Alle Topos</a><div class="empty" style="margin-top:12px;">Klettergarten nicht gefunden.</div></div>`;
+    return;
+  }
+  const c = data.crag;
+  const sectorsHtml = data.sectors.map(topoSectorHtml).join("");
+  const looseHtml = data.looseRoutes.length ? topoSectorHtml({ id: "none", name: "Ohne Sektor", routes: data.looseRoutes }) : "";
+  const hasRoutes = data.sectors.some(s => s.routes.length) || data.looseRoutes.length;
+
+  root.innerHTML = `
+    <div class="card" style="margin-bottom:12px;">
+      <a class="expand-link" href="topo.html">← Alle Topos</a>
+      <h1 style="margin-top:8px;">${escapeHtml(c.name)} <span class="badge">${TOPO_DISC_LABELS[c.discipline] || c.discipline}</span></h1>
+    </div>
+    <div class="card" style="margin-bottom:12px;">
+      <h2>Position</h2>
+      <p class="muted" id="topoMapHint"></p>
+      <div class="divider"></div>
+      <div id="topoMap" class="alpin-map"></div>
+      <div class="map-actions">
+        <button type="button" class="btn btn-ghost" id="topoEditPos">Position bearbeiten</button>
+        <button type="button" class="btn btn-primary" id="topoSavePos" style="display:none;">Position speichern</button>
+      </div>
+    </div>
+    ${c.discipline === "indoor" ? "" : `
+    <div class="card">
+      <h2>Sektoren & Routen</h2>
+      <div class="divider"></div>
+      ${hasRoutes ? sectorsHtml + looseHtml : `<div class="empty">Noch keine Sektoren/Routen erfasst.</div>`}
+    </div>`}`;
+
+  wireTopoCollapsibles(root);
+  setupTopoMap(c, cragId);
+}
+
+function topoSectorHtml(s) {
+  return `
+    <div class="topo-sector">
+      <div class="collapsible-header topo-sec-head open">
+        <h2 style="font-size:14px; margin:0;">${escapeHtml(s.name)} <span class="muted">(${s.routes.length})</span></h2>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="collapsible-body open">
+        ${s.routes.length ? `<div class="list" style="margin:8px 0 4px;">${s.routes.map(topoRouteHtml).join("")}</div>` : `<div class="empty">Keine Routen.</div>`}
+      </div>
+    </div>`;
+}
+
+function topoRouteHtml(r) {
+  const bits = [];
+  if (r.length_m) bits.push(`${r.length_m} m`);
+  if (r.ascents) bits.push(`${r.ascents} Beg. · ${r.climbers} Kletterer`);
+  const remarks = r.remarks || [];
+  return `
+    <div class="topo-route">
+      <div class="kpi">
+        <div style="min-width:0;">
+          <strong>${escapeHtml(r.name)}</strong>
+          <div class="muted">${bits.join(" · ") || "—"}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          ${r.grade ? `<span class="badge">${escapeHtml(String(r.grade))}</span>` : ''}
+          ${remarks.length ? `<span class="log-detail-toggle" data-remarks-toggle="${r.id}">${remarks.length} 💬</span>` : ''}
+        </div>
+      </div>
+      ${remarks.length ? `<div class="topo-remarks" id="rem-${r.id}" style="display:none;">
+        ${remarks.map(rm => `<div class="topo-remark"><span class="ad-key">${escapeHtml(rm.username)}</span> <span class="td-date">${fmtDate(rm.created_at)}</span><div>${escapeHtml(rm.notes)}</div></div>`).join("")}
+      </div>` : ''}
+    </div>`;
+}
+
+function wireTopoCollapsibles(scope) {
+  scope.querySelectorAll(".topo-sec-head").forEach(h => {
+    h.addEventListener("click", () => {
+      h.classList.toggle("open");
+      const body = h.nextElementSibling;
+      if (body) body.classList.toggle("open");
+    });
+  });
+  scope.querySelectorAll("[data-remarks-toggle]").forEach(t => {
+    t.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const box = document.getElementById("rem-" + t.dataset.remarksToggle);
+      if (box) box.style.display = box.style.display === "none" ? "block" : "none";
+    });
+  });
+}
+
+function setupTopoMap(c, cragId) {
+  const mapEl = document.getElementById("topoMap");
+  const hint = document.getElementById("topoMapHint");
+  const editBtn = document.getElementById("topoEditPos");
+  const saveBtn = document.getElementById("topoSavePos");
+  if (!mapEl) return;
+  const has = c.lat != null && c.lng != null;
+  let map = null, marker = null, editing = false, picked = null;
+
+  function ensureMap(center, zoom) {
+    if (typeof L === "undefined") { setTimeout(() => ensureMap(center, zoom), 300); return; }
+    if (map) return;
+    map = L.map(mapEl).setView(center, zoom);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(map);
+    if (has) marker = L.marker([c.lat, c.lng]).addTo(map);
+    map.on("click", (e) => {
+      if (!editing) return;
+      picked = e.latlng;
+      if (!marker) { marker = L.marker(e.latlng, { draggable: true }).addTo(map); marker.on("dragend", () => { picked = marker.getLatLng(); }); }
+      else marker.setLatLng(e.latlng);
+    });
+    setTimeout(() => map.invalidateSize(), 200);
+  }
+
+  if (has) { hint.textContent = "Bekannte Position dieses Klettergartens."; ensureMap([c.lat, c.lng], 13); }
+  else { hint.textContent = "Noch keine Position. Klicke „Position bearbeiten“ und tippe auf die Karte."; ensureMap([47.0, 11.0], 6); }
+
+  editBtn.addEventListener("click", () => {
+    editing = !editing;
+    editBtn.textContent = editing ? "Abbrechen" : "Position bearbeiten";
+    saveBtn.style.display = editing ? "" : "none";
+    hint.textContent = editing
+      ? "Tippe auf die Karte, um die Nadel zu setzen (oder ziehe sie)."
+      : (has ? "Bekannte Position dieses Klettergartens." : "Noch keine Position gesetzt.");
+  });
+
+  saveBtn.addEventListener("click", async () => {
+    const ll = picked || (marker ? marker.getLatLng() : null);
+    if (!ll) { alert("Bitte zuerst eine Position auf der Karte setzen."); return; }
+    const r = await api(`/api/crags/${cragId}/location`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: ll.lat, lng: ll.lng })
+    });
+    if (r.ok) { alert("Position gespeichert."); location.reload(); }
+    else alert((await r.json()).error || "Fehler");
+  });
 }

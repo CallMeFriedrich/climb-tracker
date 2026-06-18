@@ -20,6 +20,7 @@
       </a>
       <div class="nav">
         <a class="pill" href="index.html">Dashboard</a>
+        <a class="pill" href="topo.html">Topos</a>
         <a class="pill" href="community.html">Community</a>
       </div>
     </div>
@@ -111,6 +112,14 @@
           <button class="btn btn-danger" id="adminDelete" type="button">User löschen</button>
         </div>
       </div>
+    </div>
+
+    <!-- IP addresses: admin only -->
+    <div class="card" id="adminIps" style="display:none; margin-bottom:16px;">
+      <h2>IP-Adressen <span class="badge">Admin</span></h2>
+      <p class="muted">Nur für Admins sichtbar. Für den Nutzer unsichtbar.</p>
+      <div class="divider"></div>
+      <div id="ipList">Lädt…</div>
     </div>
 
     <!-- Bio: für alle sichtbar -->

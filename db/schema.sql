@@ -24,9 +24,11 @@ CREATE TABLE IF NOT EXISTS goals (
 CREATE TABLE IF NOT EXISTS crags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  discipline TEXT NOT NULL DEFAULT 'sport',  -- 'sport' | 'boulder' | 'alpin' (indoor halls stored per discipline)
+  discipline TEXT NOT NULL DEFAULT 'sport',  -- 'indoor' | 'sport' | 'boulder' | 'alpin'
   created_by INTEGER,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  lat REAL,                                  -- crag map position (crowdsourced)
+  lng REAL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_crags_name ON crags(lower(name), discipline);
 
@@ -53,6 +55,18 @@ CREATE TABLE IF NOT EXISTS routes (
   FOREIGN KEY (sector_id) REFERENCES sectors(id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_routes_name ON routes(sector_id, lower(name));
+
+-- Per-user IP log (admin-visible only, hidden from the user)
+CREATE TABLE IF NOT EXISTS user_ips (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  ip TEXT NOT NULL,
+  first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen  TEXT NOT NULL DEFAULT (datetime('now')),
+  hits INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE(user_id, ip)
+);
 
 CREATE TABLE IF NOT EXISTS log_entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
