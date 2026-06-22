@@ -120,6 +120,9 @@ try {
   // ignore if column already exists
 }
 
+// Dehn Streak (stretching streak) — stored as a JSON blob per user
+try { db.exec("ALTER TABLE users ADD COLUMN dehn_streak TEXT;"); } catch (e) {}
+
 // Ensure `ascent_style` and `attempts` exist on log_entries
 try { db.exec("ALTER TABLE log_entries ADD COLUMN ascent_style TEXT;"); } catch(e) {}
 try { db.exec("ALTER TABLE log_entries ADD COLUMN attempts INTEGER;"); } catch(e) {}
@@ -372,6 +375,130 @@ app.post("/api/me/delete", requireAuth, (req, res) => {
   const userId = currentUserId(req);
   db.prepare("DELETE FROM users WHERE id=?").run(userId);
   req.session.destroy(() => res.json({ ok: true }));
+});
+
+// -------------------- Dehn Streak (stretching streak with joker system) --------------------
+function dehnDefault() {
+  return {
+    enabled: false,
+    jokers_per_month: 0,
+    current_streak: 0,
+    longest_streak: 0,
+    last_checkin_date: null,
+    jokers_used_this_month: 0,
+    joker_reset_month: null,
+    checkin_history: []
+  };
+}
+function dehnToday() { return db.prepare("SELECT date('now','localtime') AS d").get().d; }
+function dehnMonth() { return db.prepare("SELECT strftime('%Y-%m','now','localtime') AS m").get().m; }
+function dehnAddDays(dateStr, n) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function dehnDaysBetween(a, b) {
+  return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
+}
+function loadDehn(userId) {
+  const row = db.prepare("SELECT dehn_streak FROM users WHERE id=?").get(userId);
+  let s = null;
+  try { s = row && row.dehn_streak ? JSON.parse(row.dehn_streak) : null; } catch { s = null; }
+  return Object.assign(dehnDefault(), s || {});
+}
+function saveDehn(userId, s) {
+  db.prepare("UPDATE users SET dehn_streak=? WHERE id=?").run(JSON.stringify(s), userId);
+}
+// Apply monthly joker reset + streak-break detection. Mutates and returns `s`.
+function processDehn(s, today, month) {
+  if (!s.enabled) return s;
+  // Monthly joker reset
+  if (s.joker_reset_month !== month) {
+    s.jokers_used_this_month = 0;
+    s.joker_reset_month = month;
+  }
+  // Streak break detection
+  if (s.last_checkin_date) {
+    const gap = dehnDaysBetween(s.last_checkin_date, today); // today - last (calendar days)
+    if (gap >= 2) {
+      const missed = gap - 1; // days between last check-in and today (exclusive)
+      const remaining = s.jokers_per_month - s.jokers_used_this_month;
+      if (missed <= remaining) {
+        // Enough jokers: cover the missed days, keep the streak alive
+        s.jokers_used_this_month += missed;
+        for (let i = 1; i <= missed; i++) {
+          const d = dehnAddDays(s.last_checkin_date, i);
+          if (!s.checkin_history.includes(d)) s.checkin_history.push(d);
+        }
+        s.last_checkin_date = dehnAddDays(today, -1); // maintained through yesterday
+      } else {
+        // Not enough jokers: streak resets (longest preserved), joker debt cleared
+        s.current_streak = 0;
+        s.last_checkin_date = null;
+      }
+    }
+  }
+  return s;
+}
+function dehnPublic(s) {
+  const today = dehnToday();
+  return {
+    enabled: s.enabled,
+    jokers_per_month: s.jokers_per_month,
+    current_streak: s.current_streak,
+    longest_streak: s.longest_streak,
+    last_checkin_date: s.last_checkin_date,
+    jokers_used_this_month: s.jokers_used_this_month,
+    jokers_remaining: Math.max(0, s.jokers_per_month - s.jokers_used_this_month),
+    checked_in_today: s.last_checkin_date === today,
+    today
+  };
+}
+
+app.get("/api/me/dehn-streak", requireAuth, (req, res) => {
+  const uid = currentUserId(req);
+  let s = loadDehn(uid);
+  if (s.enabled) { s = processDehn(s, dehnToday(), dehnMonth()); saveDehn(uid, s); }
+  res.json({ streak: dehnPublic(s) });
+});
+
+app.post("/api/me/dehn-streak/enable", requireAuth, (req, res) => {
+  const uid = currentUserId(req);
+  const raw = Number(req.body.jokers_per_month);
+  if (!isFinite(raw)) return res.status(400).json({ error: "Bad joker count" });
+  const jpm = Math.max(0, Math.min(10, Math.floor(raw)));
+  const s = Object.assign(dehnDefault(), {
+    enabled: true,
+    jokers_per_month: jpm,
+    joker_reset_month: dehnMonth()
+  });
+  saveDehn(uid, s);
+  res.json({ streak: dehnPublic(s) });
+});
+
+app.post("/api/me/dehn-streak/disable", requireAuth, (req, res) => {
+  const uid = currentUserId(req);
+  const s = dehnDefault();
+  saveDehn(uid, s);
+  res.json({ streak: dehnPublic(s) });
+});
+
+app.post("/api/me/dehn-streak/checkin", requireAuth, (req, res) => {
+  const uid = currentUserId(req);
+  let s = loadDehn(uid);
+  if (!s.enabled) return res.status(400).json({ error: "Dehn Streak not enabled" });
+  const today = dehnToday();
+  s = processDehn(s, today, dehnMonth());
+  if (s.last_checkin_date === today) {
+    saveDehn(uid, s);
+    return res.status(409).json({ error: "Heute schon gedehnt", streak: dehnPublic(s) });
+  }
+  s.current_streak += 1;
+  s.last_checkin_date = today;
+  if (!s.checkin_history.includes(today)) s.checkin_history.push(today);
+  if (s.current_streak > s.longest_streak) s.longest_streak = s.current_streak;
+  saveDehn(uid, s);
+  res.json({ streak: dehnPublic(s) });
 });
 
 // -------------------- Community / Users --------------------

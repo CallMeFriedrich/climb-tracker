@@ -122,6 +122,9 @@ async function initDashboard() {
 
   // Logbook
   renderLogbook(logData);
+
+  // Dehn Streak daily check-in (top of dashboard)
+  initDehnDashboard();
 }
 
 function initQuickLog() {
@@ -1117,6 +1120,9 @@ async function initProfile() {
   renderUserGoals(goals, doneMap);
   renderUserLog(log, isSelf);
 
+  // Dehn Streak (own profile only)
+  if (isSelf) initDehnStreak();
+
   // Self actions
   const selfActions = document.getElementById("selfActions");
   if (selfActions) selfActions.style.display = isSelf ? "block" : "none";
@@ -1653,4 +1659,157 @@ function setupTopoMap(c, cragId) {
     if (r.ok) { alert("Position gespeichert."); location.reload(); }
     else alert((await r.json()).error || "Fehler");
   });
+}
+
+// ---------- Dehn Streak (stretching streak) ----------
+// Profile widget: read-only stats (check-in happens on the dashboard)
+function renderDehnWidget(s) {
+  const el = document.getElementById("dehnStreakBody");
+  if (!el) return;
+  el.innerHTML = `
+    <div class="status-grid">
+      <div class="status-item">
+        <div class="status-value">${s.current_streak}</div>
+        <div class="status-label">🔥 Aktueller Streak</div>
+      </div>
+      <div class="status-item">
+        <div class="status-value">${s.longest_streak}</div>
+        <div class="status-label">📅 Längster</div>
+      </div>
+      <div class="status-item">
+        <div class="status-value">${s.jokers_remaining}/${s.jokers_per_month}</div>
+        <div class="status-label">🃏 Joker übrig</div>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:12px;">
+      ${s.checked_in_today ? "Heute schon gedehnt ✅" : "Heute noch nicht eingecheckt — Einchecken geht im Dashboard."}
+    </p>
+  `;
+}
+
+// Dashboard daily check-in card (only when enabled & not yet checked in today)
+async function initDehnDashboard() {
+  const host = document.getElementById("dehnCheckinCard");
+  if (!host) return;
+  let s;
+  try { s = (await (await api("/api/me/dehn-streak")).json()).streak; } catch { return; }
+  if (!s.enabled || s.checked_in_today) { host.innerHTML = ""; return; }
+  renderDehnPrompt(host, s);
+}
+
+function renderDehnPrompt(host, s) {
+  const days = s.current_streak === 1 ? "Tag" : "Tage";
+  host.innerHTML = `
+    <div class="card dehn-prompt" style="margin-bottom:12px;">
+      <div class="dehn-prompt-row">
+        <div>
+          <h2>🔥 Dehn Streak</h2>
+          <p class="muted">Heute schon gedehnt? Aktueller Streak: ${s.current_streak} ${days}.</p>
+        </div>
+        <button class="btn btn-primary" id="dehnDashCheckin">Heute gedehnt!</button>
+      </div>
+    </div>`;
+  const btn = document.getElementById("dehnDashCheckin");
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const r = await api("/api/me/dehn-streak/checkin", { method: "POST" });
+    if (!r.ok) { host.innerHTML = ""; return; } // e.g. already checked in elsewhere
+    const ns = (await r.json()).streak;
+    renderDehnDone(host, ns);
+  });
+}
+
+function renderDehnDone(host, s) {
+  const days = s.current_streak === 1 ? "Tag" : "Tage";
+  host.innerHTML = `
+    <div class="card dehn-prompt dehn-done" style="margin-bottom:12px;">
+      <div class="dehn-prompt-row">
+        <div>
+          <h2>✅ Heute gedehnt!</h2>
+          <p class="muted">🔥 ${s.current_streak} ${days} Streak · bis morgen!</p>
+        </div>
+      </div>
+    </div>`;
+  // Disappear ~1 minute after checking in; reappears next day on reload
+  setTimeout(() => {
+    const card = host.querySelector(".card");
+    if (!card) return;
+    card.style.transition = "opacity 0.5s ease";
+    card.style.opacity = "0";
+    setTimeout(() => { host.innerHTML = ""; }, 500);
+  }, 60000);
+}
+
+function initDehnStreak() {
+  const settingsCard = document.getElementById("dehnSettings");
+  const widget = document.getElementById("dehnStreakWidget");
+  const toggle = document.getElementById("dehnToggle");
+  const modal = document.getElementById("dehnSetupModal");
+  const info = document.getElementById("dehnSettingInfo");
+  if (!settingsCard || !toggle || !widget || !modal) return;
+
+  settingsCard.style.display = "block";
+  let state = null;
+
+  function apply() {
+    if (!state) return;
+    toggle.checked = !!state.enabled;
+    if (state.enabled) {
+      if (info) info.textContent = `Aktiv · ${state.jokers_per_month} Joker/Monat`;
+      widget.style.display = "block";
+      renderDehnWidget(state);
+    } else {
+      if (info) info.textContent = "Deaktiviert.";
+      widget.style.display = "none";
+    }
+  }
+  async function refresh() {
+    try { state = (await (await api("/api/me/dehn-streak")).json()).streak; } catch { return; }
+    apply();
+  }
+
+  // Setup modal
+  function openSetup() {
+    const inp = document.getElementById("dehnJokers");
+    if (inp) inp.value = 3;
+    modal.style.display = "flex";
+  }
+  function closeSetup() { modal.style.display = "none"; }
+  document.getElementById("dehnSetupCancel")?.addEventListener("click", () => {
+    closeSetup();
+    if (state) toggle.checked = !!state.enabled; // revert toggle
+  });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) { closeSetup(); if (state) toggle.checked = !!state.enabled; }
+  });
+  document.getElementById("dehnSetupConfirm")?.addEventListener("click", async () => {
+    let jpm = parseInt(document.getElementById("dehnJokers").value, 10);
+    if (isNaN(jpm)) jpm = 0;
+    jpm = Math.max(0, Math.min(10, jpm));
+    const r = await api("/api/me/dehn-streak/enable", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jokers_per_month: jpm })
+    });
+    closeSetup();
+    if (r.ok) await refresh();
+    else { alert((await r.json()).error || "Fehler"); if (state) toggle.checked = !!state.enabled; }
+  });
+
+  // Toggle on/off
+  toggle.addEventListener("change", async () => {
+    if (toggle.checked) {
+      // Don't activate yet — confirm via setup modal first
+      toggle.checked = false;
+      openSetup();
+    } else {
+      if (!confirm("Wenn du den Dehn Streak deaktivierst, wird dein aktueller Streak zurückgesetzt. Fortfahren?")) {
+        toggle.checked = true; // revert
+        return;
+      }
+      await api("/api/me/dehn-streak/disable", { method: "POST" });
+      await refresh();
+    }
+  });
+
+  refresh();
 }

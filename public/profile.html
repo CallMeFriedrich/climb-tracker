@@ -32,6 +32,25 @@
       <div id="activityGraph">Lädt…</div>
     </div>
 
+    <!-- Dehn Streak widget: only on own profile when enabled -->
+    <div class="card" id="dehnStreakWidget" style="display:none; margin-bottom:16px;">
+      <h2>🔥 Dehn Streak</h2>
+      <p class="muted">Deine tägliche Dehn-Routine.</p>
+      <div class="divider"></div>
+      <div id="dehnStreakBody"></div>
+    </div>
+
+    <!-- Dehn Streak settings (toggle): only on own profile -->
+    <div class="card" id="dehnSettings" style="display:none; margin-bottom:16px;">
+      <label class="switch-row" for="dehnToggle">
+        <span>
+          <strong style="font-size:15px;">Dehn Streak</strong>
+          <div class="muted" id="dehnSettingInfo" style="margin-top:2px;"></div>
+        </span>
+        <span class="switch"><input type="checkbox" id="dehnToggle"><span class="slider"></span></span>
+      </label>
+    </div>
+
     <!-- Self actions: only visible on own profile -->
     <div class="card" id="selfActions" style="display:none; margin-bottom:16px;">
       <h2>Mein Account</h2>
@@ -155,6 +174,22 @@
         <p class="muted">Letzte 50 Einträge (inkl. Umgebung Indoor/Outdoor)</p>
         <div class="divider"></div>
         <div id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dehn Streak setup modal -->
+  <div class="modal-overlay" id="dehnSetupModal" style="display:none;">
+    <div class="modal">
+      <h2>Dehn Streak einrichten</h2>
+      <div class="field" style="margin-top:14px;">
+        <label for="dehnJokers">Wie viele Joker pro Monat?</label>
+        <input type="number" id="dehnJokers" min="0" max="10" value="3" inputmode="numeric" />
+        <p class="muted" style="margin-top:6px;">Joker decken verpasste Tage ab, ohne den Streak zu verlieren (0–10). Diese Zahl ist danach fix.</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="dehnSetupCancel" type="button">Abbrechen</button>
+        <button class="btn btn-primary" id="dehnSetupConfirm" type="button">Aktivieren</button>
       </div>
     </div>
   </div>
