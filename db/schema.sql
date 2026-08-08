@@ -6,7 +6,10 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   is_admin INTEGER NOT NULL DEFAULT 0,
-  bio TEXT NOT NULL DEFAULT ''
+  bio TEXT NOT NULL DEFAULT '',
+  dehn_streak TEXT,                            -- Dehn Streak state (JSON)
+  intro_seen INTEGER NOT NULL DEFAULT 1,       -- first-login intro shown (new users start at 0)
+  seen_patch INTEGER NOT NULL DEFAULT 0        -- highest patch-notes version acknowledged
 );
 
 CREATE TABLE IF NOT EXISTS goals (
@@ -28,7 +31,9 @@ CREATE TABLE IF NOT EXISTS crags (
   created_by INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   lat REAL,                                  -- crag map position (crowdsourced)
-  lng REAL
+  lng REAL,
+  tension_available INTEGER NOT NULL DEFAULT 0, -- indoor halls: has a Tension Board
+  tension_angle INTEGER                          -- fixed board angle in °, or NULL (= variable) when available
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_crags_name ON crags(lower(name), discipline);
 
@@ -79,12 +84,12 @@ CREATE TABLE IF NOT EXISTS log_entries (
   environment TEXT NOT NULL DEFAULT 'indoor',  -- 'indoor' | 'outdoor'
   ascent_style TEXT,                            -- os | flash | rp | pp | tr
   attempts INTEGER,
-  discipline TEXT,                              -- 'boulder' | 'sport' | 'alpin'
+  discipline TEXT,                              -- 'boulder' | 'sport' | 'alpin' | 'tensionboard' (indoor boulder variant, scores as boulder)
   mode TEXT,                                    -- sport only: 'lead' | 'toprope'
   crag_id INTEGER,
   sector_id INTEGER,
   route_id INTEGER,
-  details_json TEXT,                            -- length_m, quickdraws, alpine metadata, beta, gpx filename
+  details_json TEXT,                            -- length_m, quickdraws, alpine metadata, beta, gpx filename, tension: board_angle + tension_ref
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (crag_id) REFERENCES crags(id) ON DELETE SET NULL,
   FOREIGN KEY (sector_id) REFERENCES sectors(id) ON DELETE SET NULL,

@@ -32,12 +32,39 @@ const UIAA_GRADES = [
   "VI-","VI","VI+","VII-","VII","VII+","VIII-","VIII","VIII+",
   "IX-","IX","IX+","X-","X","X+","XI-","XI"
 ];
+// Tension Board shows a combined French/V grade (like the Tension app); scores as boulder
+const TENSION_GRADES = [
+  "4a/V0","4b/V0","4c/V0",
+  "5a/V1","5b/V1","5c/V2",
+  "6a/V3","6a+/V3","6b/V4","6b+/V4","6c/V5","6c+/V5",
+  "7a/V6","7a+/V7","7b/V8","7b+/V8","7c/V9","7c+/V10",
+  "8a/V11","8a+/V12","8b/V13","8b+/V14","8c/V15","8c+/V16",
+  "9a/V17"
+];
 
-const DISCIPLINES = ["boulder", "sport", "alpin"];
+const DISCIPLINES = ["boulder", "sport", "alpin", "tensionboard"];
 const MODES = ["lead", "toprope"];
 // Crag "kinds" decouple the location list from the climbing discipline:
 // indoor halls are shared between indoor sport & boulder, outdoor crags stay per discipline.
 const CRAG_KINDS = ["indoor", "sport", "boulder", "alpin"];
+
+// -------------------- Patch notes --------------------
+// Newest last. Bump by adding a new entry with the next `v`. Users whose seen_patch < CURRENT_PATCH
+// get a popup listing the entries they haven't seen yet.
+const PATCH_NOTES = [
+  {
+    v: 1,
+    date: "2026-08-08",
+    title: "Tension Board, Topos & Dehn Streak",
+    items: [
+      "Tension-Board-Boulder loggen — mit Board-Winkel und kombiniertem French/V-Grad (z. B. 6b/V4).",
+      "In den Topos kannst du bei einer Halle das Tension Board aktivieren und den Winkel hinterlegen. Beim Loggen wird der Winkel dann automatisch gesetzt.",
+      "Dehn Streak: täglicher Dehn-Streak mit Joker-System — im Profil aktivieren, täglich im Dashboard einchecken.",
+      "Topos: durchsuchbare Übersicht aller Klettergärten, Sektoren und Routen inkl. Karte pro Ort.",
+    ]
+  }
+];
+const CURRENT_PATCH = PATCH_NOTES.reduce((m, p) => Math.max(m, p.v), 0);
 
 function isValidGrade(category, grade, environment) {
   if (category === "lead") return LEAD_GRADES.includes(grade);
@@ -53,6 +80,8 @@ function gradeValidForEntry(discipline, environment, grade) {
   const g = String(grade);
   if (discipline === "alpin") return UIAA_GRADES.includes(g);
   if (discipline === "sport") return LEAD_GRADES.includes(g);
+  // Tension Board is an indoor boulder variant → V-scale (Tension app)
+  if (discipline === "tensionboard") return TENSION_GRADES.includes(g);
   if (discipline === "boulder") {
     return environment === "outdoor"
       ? BOULDER_OUTDOOR_GRADES.includes(g)
@@ -63,7 +92,8 @@ function gradeValidForEntry(discipline, environment, grade) {
 
 // Map a discipline to the scoring grade-family kept in log_entries.category
 function categoryForDiscipline(discipline) {
-  return discipline === "boulder" ? "boulder" : "lead";
+  // Tension Board scores like a normal indoor boulder
+  return (discipline === "boulder" || discipline === "tensionboard") ? "boulder" : "lead";
 }
 
 // -------------------- Weights (for performance score) --------------------
@@ -122,6 +152,12 @@ try {
 
 // Dehn Streak (stretching streak) — stored as a JSON blob per user
 try { db.exec("ALTER TABLE users ADD COLUMN dehn_streak TEXT;"); } catch (e) {}
+
+// Onboarding intro (first login) + patch-notes tracking.
+// Existing users default to "already onboarded" (1) and "not caught up on patches" (0)
+// so they see the current patch notes but not the first-login intro; new registrations flip these.
+try { db.exec("ALTER TABLE users ADD COLUMN intro_seen INTEGER NOT NULL DEFAULT 1;"); } catch (e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN seen_patch INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
 
 // Ensure `ascent_style` and `attempts` exist on log_entries
 try { db.exec("ALTER TABLE log_entries ADD COLUMN ascent_style TEXT;"); } catch(e) {}
@@ -193,6 +229,11 @@ db.exec(`
 // Crag coordinates (for the topo map) — crowdsourced, nullable
 try { db.exec("ALTER TABLE crags ADD COLUMN lat REAL;"); } catch (e) {}
 try { db.exec("ALTER TABLE crags ADD COLUMN lng REAL;"); } catch (e) {}
+
+// Tension Board availability per (indoor) crag — crowdsourced.
+// tension_available: 0/1; tension_angle: fixed board angle in degrees, or NULL when available=1 => variable angle.
+try { db.exec("ALTER TABLE crags ADD COLUMN tension_available INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+try { db.exec("ALTER TABLE crags ADD COLUMN tension_angle INTEGER;"); } catch (e) {}
 
 // Per-user IP log — admin-visible only, invisible to the user themselves
 db.exec(`
@@ -294,8 +335,9 @@ app.post("/api/register", async (req, res) => {
   const existing = db.prepare("SELECT id FROM users WHERE username=?").get(String(username));
   if (existing) return res.status(409).json({ error: "Username already exists" });
   const hash = await bcrypt.hash(String(password), 12);
-  const info = db.prepare("INSERT INTO users (username, password_hash) VALUES (?,?)")
-    .run(String(username), hash);
+  // New users: show the first-login intro (intro_seen=0), skip the patch notes (already current).
+  const info = db.prepare("INSERT INTO users (username, password_hash, intro_seen, seen_patch) VALUES (?,?,?,?)")
+    .run(String(username), hash, 0, CURRENT_PATCH);
   req.session.userId = info.lastInsertRowid;
   const ip = clientIp(req);
   recordIp(info.lastInsertRowid, ip);
@@ -329,9 +371,28 @@ app.post("/api/logout", (req, res) => {
 
 // -------------------- Self-service (me) --------------------
 app.get("/api/me", requireAuth, (req, res) => {
-  const me = db.prepare("SELECT id, username, is_admin, bio FROM users WHERE id=?")
+  const me = db.prepare("SELECT id, username, is_admin, bio, intro_seen, seen_patch FROM users WHERE id=?")
     .get(currentUserId(req));
   res.json({ me });
+});
+
+// First-login intro acknowledged → don't show again, and mark patches current too
+app.post("/api/me/seen-intro", requireAuth, (req, res) => {
+  db.prepare("UPDATE users SET intro_seen=1, seen_patch=? WHERE id=?").run(CURRENT_PATCH, currentUserId(req));
+  res.json({ ok: true });
+});
+
+// Patch notes acknowledged → mark current
+app.post("/api/me/seen-patch", requireAuth, (req, res) => {
+  db.prepare("UPDATE users SET seen_patch=? WHERE id=?").run(CURRENT_PATCH, currentUserId(req));
+  res.json({ ok: true });
+});
+
+// Patch notes the current user hasn't seen yet
+app.get("/api/patch-notes", requireAuth, (req, res) => {
+  const row = db.prepare("SELECT seen_patch FROM users WHERE id=?").get(currentUserId(req));
+  const seen = row ? row.seen_patch : CURRENT_PATCH;
+  res.json({ current: CURRENT_PATCH, notes: PATCH_NOTES.filter(p => p.v > seen) });
 });
 
 app.post("/api/me/username", requireAuth, (req, res) => {
@@ -540,6 +601,16 @@ app.get("/api/leaderboard/weekly", requireAuth, (req, res) => {
         l.count *
         (CASE WHEN l.mode='toprope' THEN 0.5 ELSE 1 END) *
         CASE
+          WHEN l.discipline='tensionboard' THEN
+            CASE l.grade
+              WHEN '4a/V0' THEN 10 WHEN '4b/V0' THEN 11 WHEN '4c/V0' THEN 12
+              WHEN '5a/V1' THEN 14 WHEN '5b/V1' THEN 16 WHEN '5c/V2' THEN 18
+              WHEN '6a/V3' THEN 22 WHEN '6a+/V3' THEN 24 WHEN '6b/V4' THEN 26 WHEN '6b+/V4' THEN 29 WHEN '6c/V5' THEN 32 WHEN '6c+/V5' THEN 36
+              WHEN '7a/V6' THEN 40 WHEN '7a+/V7' THEN 45 WHEN '7b/V8' THEN 50 WHEN '7b+/V8' THEN 56 WHEN '7c/V9' THEN 63 WHEN '7c+/V10' THEN 71
+              WHEN '8a/V11' THEN 80 WHEN '8a+/V12' THEN 90 WHEN '8b/V13' THEN 101 WHEN '8b+/V14' THEN 113 WHEN '8c/V15' THEN 126 WHEN '8c+/V16' THEN 140
+              WHEN '9a/V17' THEN 155
+              ELSE 0
+            END
           WHEN l.category='lead' THEN
             CASE l.grade
               WHEN '4a' THEN 10
@@ -664,13 +735,36 @@ app.get("/api/grades", requireAuth, (req, res) => {
   });
 });
 
-// List crags (optionally filtered by discipline)
+// List crags (optionally filtered by discipline and/or Tension-Board availability)
 app.get("/api/crags", requireAuth, (req, res) => {
   const discipline = req.query.discipline ? String(req.query.discipline) : null;
-  const rows = discipline
-    ? db.prepare("SELECT id, name, discipline FROM crags WHERE discipline=? ORDER BY name COLLATE NOCASE").all(discipline)
-    : db.prepare("SELECT id, name, discipline FROM crags ORDER BY name COLLATE NOCASE").all();
-  res.json({ crags: rows });
+  const tensionOnly = String(req.query.tension || "") === "1";
+  const where = [], params = [];
+  if (discipline) { where.push("discipline=?"); params.push(discipline); }
+  if (tensionOnly) { where.push("tension_available=1"); }
+  const sql = "SELECT id, name, discipline, tension_available, tension_angle FROM crags"
+    + (where.length ? " WHERE " + where.join(" AND ") : "")
+    + " ORDER BY name COLLATE NOCASE";
+  res.json({ crags: db.prepare(sql).all(...params) });
+});
+
+// Set / update Tension Board availability + angle for a crag (crowdsourced)
+app.post("/api/crags/:id/tension", requireAuth, (req, res) => {
+  const cragId = Number(req.params.id);
+  if (!Number.isInteger(cragId)) return res.status(400).json({ error: "Bad crag id" });
+  const crag = db.prepare("SELECT id FROM crags WHERE id=?").get(cragId);
+  if (!crag) return res.status(404).json({ error: "Crag not found" });
+
+  const available = (req.body.available === true || req.body.available === "1" || req.body.available === 1) ? 1 : 0;
+  let angle = null; // null while available means "variable angle"
+  if (available) {
+    const raw = req.body.angle;
+    if (raw !== "variable" && raw != null && raw !== "" && isFinite(Number(raw))) {
+      angle = Math.max(0, Math.min(90, Math.round(Number(raw))));
+    }
+  }
+  db.prepare("UPDATE crags SET tension_available=?, tension_angle=? WHERE id=?").run(available, angle, cragId);
+  res.json({ ok: true });
 });
 
 // Create (or reuse existing) crag — crowdsourced, case-insensitive dedupe
@@ -773,7 +867,7 @@ app.get("/api/topo/crag/:id", requireAuth, (req, res) => {
   const cragId = Number(req.params.id);
   if (!Number.isInteger(cragId)) return res.status(400).json({ error: "Bad crag id" });
 
-  const crag = db.prepare("SELECT id, name, discipline, lat, lng FROM crags WHERE id=?").get(cragId);
+  const crag = db.prepare("SELECT id, name, discipline, lat, lng, tension_available, tension_angle FROM crags WHERE id=?").get(cragId);
   if (!crag) return res.status(404).json({ error: "Crag not found" });
 
   const sectors = db.prepare("SELECT id, name FROM sectors WHERE crag_id=? ORDER BY name COLLATE NOCASE").all(cragId);
@@ -829,6 +923,12 @@ function buildDetails(discipline, body) {
   if (discipline === "sport") {
     if (num(body.length_m) != null) d.length_m = Math.max(0, Math.floor(num(body.length_m)));
     if (num(body.quickdraws) != null) d.quickdraws = Math.max(0, Math.floor(num(body.quickdraws)));
+  } else if (discipline === "tensionboard") {
+    // Board angle (e.g. 20 / 40 degrees) + optional Tension-app reference (name/id/link)
+    const angle = num(body.board_angle);
+    if (angle != null) d.board_angle = Math.max(0, Math.min(90, Math.round(angle)));
+    const ref = str(body.tension_ref, 300);
+    if (ref != null) d.tension_ref = ref;
   } else if (discipline === "alpin") {
     d.tour_name   = str(body.tour_name, 160);
     d.summit      = str(body.summit, 120);
@@ -868,7 +968,7 @@ app.post("/api/log/me", requireAuth, (req, res) => {
   const b = req.body;
 
   // ---- Discipline + environment ----
-  const env = String(b.environment || "indoor");
+  let env = String(b.environment || "indoor");
   if (!["indoor", "outdoor"].includes(env)) return res.status(400).json({ error: "Bad environment" });
 
   let discipline = String(b.discipline || "");
@@ -878,6 +978,8 @@ app.post("/api/log/me", requireAuth, (req, res) => {
   }
   if (!DISCIPLINES.includes(discipline)) return res.status(400).json({ error: "Bad discipline" });
   if (env === "indoor" && discipline === "alpin") return res.status(400).json({ error: "Alpin is outdoor only" });
+  // Tension Board is indoor-only; force it so scoring uses the indoor boulder weights
+  if (discipline === "tensionboard") env = "indoor";
 
   const category = categoryForDiscipline(discipline);
 

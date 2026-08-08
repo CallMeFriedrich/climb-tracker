@@ -7,6 +7,7 @@ async function api(url, options) {
 const FRENCH_GRADES = ["4a","4b","4c","5a","5b","5c","6a","6a+","6b","6b+","6c","6c+","7a","7a+","7b","7b+","7c","7c+","8a","8a+","8b","8b+","8c","8c+","9a"];
 const BOULDER_NUM_GRADES = ["1","2","3","4","5","6","7","8","9"];
 const UIAA_GRADES = ["I","II","III","III+","IV-","IV","IV+","V-","V","V+","VI-","VI","VI+","VII-","VII","VII+","VIII-","VIII","VIII+","IX-","IX","IX+","X-","X","X+","XI-","XI"];
+const TENSION_GRADES = ["4a/V0","4b/V0","4c/V0","5a/V1","5b/V1","5c/V2","6a/V3","6a+/V3","6b/V4","6b+/V4","6c/V5","6c+/V5","7a/V6","7a+/V7","7b/V8","7b+/V8","7c/V9","7c+/V10","8a/V11","8a+/V12","8b/V13","8b+/V14","8c/V15","8c+/V16","9a/V17"];
 
 function gradesFor(category, environment) {
   if (category === "lead") return FRENCH_GRADES;
@@ -18,6 +19,7 @@ function gradesFor(category, environment) {
 function gradesForDiscipline(discipline, environment) {
   if (discipline === "alpin") return UIAA_GRADES;
   if (discipline === "sport") return FRENCH_GRADES;
+  if (discipline === "tensionboard") return TENSION_GRADES; // V-scale (Tension app)
   // boulder
   return environment === "outdoor" ? FRENCH_GRADES : BOULDER_NUM_GRADES;
 }
@@ -33,6 +35,26 @@ function fillGradeSelect(grades, selectedGrade) {
     if (g === selectedGrade) o.selected = true;
     sel.appendChild(o);
   }
+  renderGradeChips(sel, grades, selectedGrade || sel.value);
+}
+
+// Chip UI mirrors the native #grade select so all existing logic (which reads
+// gradeSelect.value / listens for "change") keeps working unchanged.
+function renderGradeChips(sel, grades, activeGrade) {
+  const box = document.getElementById("gradeChips");
+  if (!box) return;
+  const active = grades.includes(activeGrade) ? activeGrade : grades[0];
+  if (sel.value !== active) sel.value = active;
+  box.innerHTML = grades.map(g =>
+    `<button type="button" class="grade-chip${g === active ? " active" : ""}" data-grade="${g}">${g}</button>`
+  ).join("");
+  box.querySelectorAll(".grade-chip").forEach(btn => {
+    btn.addEventListener("click", () => {
+      sel.value = btn.dataset.grade;
+      sel.dispatchEvent(new Event("change"));
+      box.querySelectorAll(".grade-chip").forEach(b => b.classList.toggle("active", b === btn));
+    });
+  });
 }
 
 function escapeHtml(s) {
@@ -125,6 +147,72 @@ async function initDashboard() {
 
   // Dehn Streak daily check-in (top of dashboard)
   initDehnDashboard();
+
+  // First-login intro / patch notes popup
+  initOnboarding(me);
+}
+
+// ---------- Onboarding: first-login intro + patch notes ----------
+function initOnboarding(me) {
+  if (!me) return;
+  if (me.intro_seen === 0) {
+    showIntroModal();
+    return; // intro takes precedence; patch notes wait until next visit
+  }
+  api("/api/patch-notes").then(r => r.json()).then(data => {
+    if (data.notes && data.notes.length) showPatchModal(data.notes);
+  }).catch(() => {});
+}
+
+function closeModalEl(overlay) { if (overlay) overlay.remove(); }
+
+function showIntroModal() {
+  const html = `
+    <div class="modal-overlay" id="introModal">
+      <div class="modal modal-lg">
+        <h2>Willkommen bei Climb Tracker! 🧗</h2>
+        <p class="muted" style="margin-top:6px;">Kurz das Wichtigste:</p>
+        <ul class="intro-list">
+          <li><strong>Eintragen:</strong> Logge Begehungen Schritt für Schritt — Indoor/Outdoor, Sport, Boulder, Alpin und <strong>Tension Board</strong>.</li>
+          <li><strong>Diese Woche:</strong> Ein wöchentliches Leaderboard bewertet deine Begehungen nach Schwierigkeit.</li>
+          <li><strong>Topos:</strong> Durchstöbere Klettergärten, Sektoren und Routen inkl. Karte.</li>
+          <li><strong>Dehn Streak:</strong> Optionaler täglicher Dehn-Streak mit Joker-System — im <em>Profil</em> aktivieren, täglich im Dashboard einchecken.</li>
+          <li><strong>Profil & Community:</strong> Ziele setzen, Aktivität sehen; Profile aller Nutzer sind einsehbar.</li>
+        </ul>
+        <p class="muted" style="font-size:12px;">Deine Daten werden dauerhaft gespeichert.</p>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="introDone" type="button">Los geht's!</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+  const overlay = document.getElementById("introModal");
+  const done = () => { api("/api/me/seen-intro", { method: "POST" }); closeModalEl(overlay); };
+  document.getElementById("introDone").addEventListener("click", done);
+}
+
+function showPatchModal(notes) {
+  const blocks = notes.map(n => `
+    <div class="patch-block">
+      <div class="patch-head"><strong>${escapeHtml(n.title)}</strong> <span class="muted">${escapeHtml(n.date || "")}</span></div>
+      <ul class="intro-list">${(n.items || []).map(i => `<li>${escapeHtml(i)}</li>`).join("")}</ul>
+    </div>`).join("");
+  const html = `
+    <div class="modal-overlay" id="patchModal">
+      <div class="modal modal-lg">
+        <h2>Neue Features ✨</h2>
+        <p class="muted" style="margin-top:6px;">Was seit deinem letzten Besuch dazugekommen ist:</p>
+        ${blocks}
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="patchDone" type="button">Alles klar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+  const overlay = document.getElementById("patchModal");
+  document.getElementById("patchDone").addEventListener("click", () => {
+    api("/api/me/seen-patch", { method: "POST" }); closeModalEl(overlay);
+  });
 }
 
 function initQuickLog() {
@@ -166,7 +254,17 @@ function initQuickLog() {
   const locationSec  = document.getElementById("locationSection");
   const sportExtras  = document.getElementById("sportExtras");
   const alpinSection = document.getElementById("alpinSection");
+  const tensionSection = document.getElementById("tensionSection");
   const submitBtn    = document.getElementById("submitLog");
+
+  // Tension board angle quick-presets set the number input
+  tensionSection?.querySelectorAll("[data-angle]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const inp = document.getElementById("board_angle");
+      if (inp) inp.value = btn.dataset.angle;
+      tensionSection.querySelectorAll("[data-angle]").forEach(b => b.classList.toggle("active", b === btn));
+    });
+  });
 
   // ---- Ascent style definitions ----
   const LEAD_STYLES = [
@@ -188,7 +286,7 @@ function initQuickLog() {
   ];
 
   function styleItems() {
-    if (discipline === "boulder") return BOULDER_ATTEMPTS;
+    if (discipline === "boulder" || discipline === "tensionboard") return BOULDER_ATTEMPTS;
     if (discipline === "sport") return mode === "toprope" ? TR_STYLES : LEAD_STYLES;
     return []; // alpin → none
   }
@@ -204,7 +302,7 @@ function initQuickLog() {
   // ---- Discipline buttons (depend on environment) ----
   function disciplinesFor(e) {
     return e === "indoor"
-      ? [{ key: "sport", label: "Sport" }, { key: "boulder", label: "Boulder" }]
+      ? [{ key: "sport", label: "Sport" }, { key: "boulder", label: "Boulder" }, { key: "tensionboard", label: "Tension" }]
       : [{ key: "boulder", label: "Boulder" }, { key: "sport", label: "Sport" }, { key: "alpin", label: "Alpin" }];
   }
 
@@ -377,8 +475,42 @@ function initQuickLog() {
     });
   }
 
+  // Tension board: only halls that have a Tension Board (activated in the Topos),
+  // picking one auto-fills the board angle when the hall has a fixed angle.
+  async function buildTensionLocationUI() {
+    cragIdEl.value = ""; sectorIdEl.value = ""; routeIdEl.value = "";
+    let halls = [];
+    try { halls = (await (await api("/api/crags?discipline=indoor&tension=1")).json()).crags || []; } catch {}
+    crags = halls;
+    locationSec.innerHTML = `
+      <div class="field">
+        <label>Halle (mit Tension Board) <span class="opt">optional</span></label>
+        <select class="loc-select" id="tensionHallSelect">
+          <option value="">— wählen —</option>
+          ${halls.map(h => `<option value="${h.id}">${escapeHtml(h.name)}${h.tension_angle != null ? ` · ${h.tension_angle}°` : " · variabel"}</option>`).join("")}
+        </select>
+        <div class="info-box" style="margin-top:8px;">
+          <span>ℹ️</span>
+          <div>Halle nicht dabei? Du musst das Tension Board der Halle zuerst in den <a href="topo.html">Topos</a> aktivieren.</div>
+        </div>
+      </div>`;
+    const sel = document.getElementById("tensionHallSelect");
+    sel.addEventListener("change", () => {
+      cragIdEl.value = sel.value || "";
+      const hall = halls.find(h => String(h.id) === String(sel.value));
+      const angleInput = document.getElementById("board_angle");
+      // Fixed-angle board → auto-select the angle; variable board → leave the user's choice
+      if (hall && hall.tension_angle != null && angleInput) {
+        angleInput.value = hall.tension_angle;
+        document.querySelectorAll("#tensionAnglePresets [data-angle]").forEach(b =>
+          b.classList.toggle("active", String(b.dataset.angle) === String(hall.tension_angle)));
+      }
+    });
+  }
+
   async function buildLocationUI() {
     if (discipline === "alpin") { locationSec.innerHTML = ""; return; }
+    if (discipline === "tensionboard") { await buildTensionLocationUI(); return; }
     locationSec.innerHTML = `
       <div class="field">
         <label>${cragLabel()} <span class="opt">optional</span></label>
@@ -524,11 +656,13 @@ function initQuickLog() {
 
     const isAlpin = discipline === "alpin";
     const isSport = discipline === "sport";
+    const isTension = discipline === "tensionboard";
 
     modeField.style.display = isSport ? "" : "none";
     // Route length + quickdraws only make sense for outdoor sport routes
     sportExtras.style.display = (isSport && env === "outdoor") ? "grid" : "none";
     alpinSection.style.display = isAlpin ? "" : "none";
+    if (tensionSection) tensionSection.style.display = isTension ? "grid" : "none";
 
     currentStyle = "";
     refreshGrades("");
@@ -568,6 +702,13 @@ function initQuickLog() {
     });
   });
 
+  // ---- Mobile quick-log FAB ----
+  const logCardPanel = document.getElementById("logCardPanel");
+  const mobileLogFab = document.getElementById("mobileLogFab");
+  const logCardClose = document.getElementById("logCardClose");
+  mobileLogFab?.addEventListener("click", () => logCardPanel?.classList.add("open"));
+  logCardClose?.addEventListener("click", () => logCardPanel?.classList.remove("open"));
+
   // ---- Mehr Optionen ----
   const expandLink = document.getElementById("expandExtras");
   const extraFields = document.getElementById("extraFields");
@@ -580,7 +721,10 @@ function initQuickLog() {
   function updateSubmitLabel() {
     if (!submitBtn) return;
     const grade = gradeSelect ? gradeSelect.value : "";
-    const discLabel = discipline === "boulder" ? "Boulder" : discipline === "alpin" ? "Alpin" : (mode === "toprope" ? "Toprope" : "Sport");
+    const discLabel = discipline === "boulder" ? "Boulder"
+      : discipline === "tensionboard" ? "Tension"
+      : discipline === "alpin" ? "Alpin"
+      : (mode === "toprope" ? "Toprope" : "Sport");
     const stylePart = (discipline === "sport" && currentStyle) ? ` · ${currentStyle.toUpperCase()}` : "";
     if (discipline === "alpin") { submitBtn.textContent = grade ? `Alpin ${grade} speichern` : "Tour speichern"; return; }
     submitBtn.textContent = grade ? `${discLabel} ${grade}${stylePart} speichern` : `${discLabel} speichern`;
@@ -598,6 +742,7 @@ function initQuickLog() {
   logForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     submitBtn.disabled = true;
+    logCardPanel?.classList.remove("open");
     try {
       const fd = new FormData(e.target);
       fd.set("environment", env);
@@ -605,7 +750,7 @@ function initQuickLog() {
       const grade = fd.get("grade");
 
       // ascent_style + attempts
-      if (discipline === "boulder") {
+      if (discipline === "boulder" || discipline === "tensionboard") {
         if (currentStyle === "flash") { fd.set("ascent_style", "flash"); fd.set("attempts", "1"); }
         else { fd.set("ascent_style", ""); fd.set("attempts", currentStyle === "7+" ? "7" : currentStyle); }
         fd.delete("mode");
@@ -624,7 +769,7 @@ function initQuickLog() {
       const r = await api("/api/log/me", { method: "POST", body: new URLSearchParams(fd) });
       if (!r.ok) { alert((await r.json()).error || "Fehler"); return; }
 
-      saveLastChoice(discipline === "boulder" ? "boulder" : "lead", grade);
+      saveLastChoice((discipline === "boulder" || discipline === "tensionboard") ? "boulder" : "lead", grade);
 
       // Reset volatile alpine inputs (keep the map instance, just clear the pin)
       if (discipline === "alpin") {
@@ -637,6 +782,10 @@ function initQuickLog() {
       if (discipline === "sport") {
         const len = document.getElementById("length_m"); if (len) len.value = "";
         const qd = document.getElementById("quickdraws"); if (qd) qd.value = "";
+      }
+      // Clear the Tension reference (angle stays — usually the same for a session)
+      if (discipline === "tensionboard") {
+        const ref = document.getElementById("tension_ref"); if (ref) ref.value = "";
       }
 
       // Reload dashboard data
@@ -811,8 +960,11 @@ function logCardHtml(e, isSelf) {
   const isAlpin = e.discipline === "alpin";
   const isTR = e.discipline === "sport" && e.mode === "toprope";
   const det = parseDetails(e);
+  const isTension = e.discipline === "tensionboard";
   const ascentLabel = fmtAscent(e);
-  const typeLabel = isAlpin ? "Alpin" : (e.category === "boulder" ? "Boulder" : (isTR ? "Toprope" : "Lead"));
+  const typeLabel = isAlpin ? "Alpin"
+    : isTension ? "Tension"
+    : (e.category === "boulder" ? "Boulder" : (isTR ? "Toprope" : "Lead"));
 
   // location / context parts
   const locParts = [];
@@ -828,6 +980,8 @@ function logCardHtml(e, isSelf) {
   const extras = [];
   if (det.length_m) extras.push(`${det.length_m} m`);
   if (det.quickdraws) extras.push(`${det.quickdraws} Express`);
+  if (det.board_angle != null) extras.push(`${det.board_angle}°`);
+  if (det.tension_ref) extras.push(`Tension: ${escapeHtml(String(det.tension_ref).slice(0, 60))}`);
 
   const detailLine = [locParts.join(" · "), fmtDate(e.created_at), ...extras, e.notes ? escapeHtml(e.notes) : ""]
     .filter(Boolean).join(" · ");
@@ -1549,6 +1703,7 @@ async function initTopoDetail(root, cragId) {
         <button type="button" class="btn btn-primary" id="topoSavePos" style="display:none;">Position speichern</button>
       </div>
     </div>
+    ${c.discipline === "indoor" ? topoTensionHtml(c) : ""}
     ${c.discipline === "indoor" ? "" : `
     <div class="card">
       <h2>Sektoren & Routen</h2>
@@ -1558,6 +1713,71 @@ async function initTopoDetail(root, cragId) {
 
   wireTopoCollapsibles(root);
   setupTopoMap(c, cragId);
+  if (c.discipline === "indoor") setupTopoTension(c, cragId);
+}
+
+function topoTensionHtml(c) {
+  const on = c.tension_available === 1;
+  const variable = on && (c.tension_angle == null);
+  const angleVal = (on && c.tension_angle != null) ? c.tension_angle : "";
+  return `
+    <div class="card" id="topoTensionCard" style="margin-bottom:12px;">
+      <h2>Tension Board</h2>
+      <p class="muted">Gibt es in dieser Halle ein Tension Board? Dann kann man beim Loggen die Halle wählen und der Winkel wird automatisch gesetzt.</p>
+      <div class="divider"></div>
+      <label class="switch-row" for="topoTensionToggle">
+        <span><strong style="font-size:15px;">Tension Board vorhanden</strong></span>
+        <span class="switch"><input type="checkbox" id="topoTensionToggle" ${on ? "checked" : ""}><span class="slider"></span></span>
+      </label>
+      <div id="topoTensionAngleWrap" style="display:${on ? "block" : "none"}; margin-top:12px;">
+        <label class="remember-label" style="margin-bottom:10px;">
+          <input type="checkbox" id="topoTensionVariable" ${variable ? "checked" : ""}> Variabler Winkel (verstellbares Board)
+        </label>
+        <div class="field" id="topoTensionAngleField" style="display:${variable ? "none" : "grid"};">
+          <label>Board-Winkel</label>
+          <div class="style-btns" id="topoTensionPresets">
+            <button type="button" class="style-btn" data-angle="20">20°</button>
+            <button type="button" class="style-btn" data-angle="40">40°</button>
+          </div>
+          <input type="number" id="topoTensionAngle" min="0" max="90" inputmode="numeric" placeholder="Winkel in °" value="${angleVal}">
+        </div>
+      </div>
+      <button type="button" class="btn btn-primary" id="topoTensionSave" style="margin-top:14px;">Speichern</button>
+    </div>`;
+}
+
+function setupTopoTension(c, cragId) {
+  const toggle = document.getElementById("topoTensionToggle");
+  const wrap = document.getElementById("topoTensionAngleWrap");
+  const variable = document.getElementById("topoTensionVariable");
+  const angleField = document.getElementById("topoTensionAngleField");
+  const angleInput = document.getElementById("topoTensionAngle");
+  const saveBtn = document.getElementById("topoTensionSave");
+  if (!toggle) return;
+
+  toggle.addEventListener("change", () => { wrap.style.display = toggle.checked ? "block" : "none"; });
+  variable.addEventListener("change", () => { angleField.style.display = variable.checked ? "none" : "grid"; });
+  document.querySelectorAll("#topoTensionPresets [data-angle]").forEach(b => {
+    b.addEventListener("click", () => {
+      angleInput.value = b.dataset.angle;
+      document.querySelectorAll("#topoTensionPresets [data-angle]").forEach(x => x.classList.toggle("active", x === b));
+    });
+  });
+
+  saveBtn.addEventListener("click", async () => {
+    const available = toggle.checked ? 1 : 0;
+    let angle = null;
+    if (available && !variable.checked) {
+      const v = parseInt(angleInput.value, 10);
+      if (!isNaN(v)) angle = Math.max(0, Math.min(90, v));
+    }
+    const body = { available, angle: (available && variable.checked) ? "variable" : angle };
+    const r = await api(`/api/crags/${cragId}/tension`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    if (r.ok) { alert("Gespeichert."); location.reload(); }
+    else alert((await r.json()).error || "Fehler");
+  });
 }
 
 function topoSectorHtml(s) {

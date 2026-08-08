@@ -39,8 +39,11 @@
     <div id="dehnCheckinCard"></div>
 
     <!-- Quick Log (guided, step-by-step) -->
-    <div class="card" style="margin-bottom:12px;">
-      <h2>Eintragen</h2>
+    <div class="card log-card-panel" id="logCardPanel" style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h2>Eintragen</h2>
+        <button type="button" class="log-card-close" id="logCardClose" aria-label="Schließen">✕</button>
+      </div>
       <div class="divider"></div>
 
       <form id="logForm" class="form">
@@ -80,6 +83,7 @@
         <div class="field" id="gradeField">
           <label for="grade" id="gradeLabel">Schwierigkeit</label>
           <select name="grade" id="grade"></select>
+          <div class="grade-chips" id="gradeChips"></div>
         </div>
 
         <!-- Ascent style (sport + boulder) -->
@@ -117,6 +121,22 @@
 
         <!-- Alpine section -->
         <div id="alpinSection" style="display:none;"></div>
+
+        <!-- Tension Board extras: board angle + optional Tension-app reference -->
+        <div id="tensionSection" style="display:none; gap:12px;" class="form">
+          <div class="field">
+            <label>Board-Winkel</label>
+            <div class="style-btns" id="tensionAnglePresets">
+              <button type="button" class="style-btn" data-angle="20">20°</button>
+              <button type="button" class="style-btn" data-angle="40">40°</button>
+            </div>
+            <input id="board_angle" name="board_angle" type="number" min="0" max="90" inputmode="numeric" placeholder="Winkel in ° (z.B. 40)" />
+          </div>
+          <div class="field">
+            <label for="tension_ref">Tension-App: Name / ID / Link <span class="opt">optional</span></label>
+            <input id="tension_ref" name="tension_ref" maxlength="300" placeholder="z.B. Boulder-Name oder Link aus der Tension-App" />
+          </div>
+        </div>
 
         <!-- Mehr Optionen: count + notes -->
         <span class="expand-link" id="expandExtras">Mehr Optionen</span>
@@ -161,6 +181,8 @@
       </div>
     </div>
   </div>
+
+  <button type="button" class="fab" id="mobileLogFab" aria-label="Eintragen">+</button>
 
   <script src="app.js?v=2026-04-07b"></script>
   <script>
