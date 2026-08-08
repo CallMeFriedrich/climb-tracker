@@ -6,7 +6,7 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Climb Tracker – Topos</title>
+  <title>Climb Tracker – Logbuch</title>
   <link rel="stylesheet" href="app.css" />
   <script src="i18n.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -17,20 +17,26 @@
     <div class="topbar">
       <a class="brand" href="index.html">
         <div class="title">Climb Tracker</div>
-        <div class="subtitle">Topos</div>
+        <div class="subtitle">Logbuch</div>
       </a>
       <div class="nav">
         <a class="pill" href="index.html">Dashboard</a>
+        <a class="pill" href="topo.html">Topos</a>
         <a class="pill" href="community.html">Community</a>
       </div>
     </div>
 
-    <div id="topoRoot"></div>
+    <div class="card">
+      <h1 id="logTitle">Logbuch</h1>
+      <p class="muted" id="logSub">Alle Einträge</p>
+      <div class="divider"></div>
+      <div id="log">Lädt…</div>
+    </div>
   </div>
 
-  <script src="app.js?v=2026-06-18"></script>
+  <script src="app.js?v=2026-08-08"></script>
   <script>
-    initTopo();
+    initFullLog();
   </script>
 </body>
 </html>

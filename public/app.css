@@ -138,6 +138,20 @@ a.brand:hover .title{ opacity: 0.85; }
 }
 .nav::-webkit-scrollbar{ display:none; }
 
+.lang-select{
+  flex-shrink: 0;
+  width: auto;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
 .pill{
   display: inline-flex;
   align-items: center;
@@ -727,6 +741,7 @@ input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:f
   font-size: 14px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
 .log-env-badge{
@@ -744,9 +759,8 @@ input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:f
 .log-card .log-detail{
   font-size: 12px;
   color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;   /* long notes/links wrap to the next line instead of overflowing */
+  word-break: break-word;
 }
 .log-card .log-count{
   flex-shrink: 0;

@@ -73,6 +73,18 @@ CREATE TABLE IF NOT EXISTS user_ips (
   UNIQUE(user_id, ip)
 );
 
+-- Alpine tours as shared, crowdsourced entities (shown in the Topos).
+-- Alpine log entries are matched to a tour by tour name (details_json.tour_name); created_by = first logger.
+CREATE TABLE IF NOT EXISTS alpine_tours (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  summit TEXT, region TEXT, grade TEXT, height_m INTEGER, protection TEXT, beta TEXT,
+  lat REAL, lng REAL,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_alpine_tours_name ON alpine_tours(lower(name));
+
 CREATE TABLE IF NOT EXISTS log_entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,

@@ -235,6 +235,46 @@ try { db.exec("ALTER TABLE crags ADD COLUMN lng REAL;"); } catch (e) {}
 try { db.exec("ALTER TABLE crags ADD COLUMN tension_available INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
 try { db.exec("ALTER TABLE crags ADD COLUMN tension_angle INTEGER;"); } catch (e) {}
 
+// Alpine tours as shared, crowdsourced entities (so they appear in the Topos).
+// Alpine log entries keep their own details_json; tours are matched to entries by tour_name.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS alpine_tours (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    summit TEXT, region TEXT, grade TEXT, height_m INTEGER, protection TEXT, beta TEXT,
+    lat REAL, lng REAL,
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_alpine_tours_name ON alpine_tours(lower(name));
+`);
+// Backfill tours from existing alpine log entries (earliest entry per name = creator).
+// INSERT OR IGNORE keeps existing (possibly edited) tours untouched, so this is idempotent.
+try {
+  const rows = db.prepare(`
+    SELECT user_id, created_at, grade, details_json FROM log_entries
+    WHERE discipline='alpin' AND details_json IS NOT NULL
+    ORDER BY datetime(created_at) ASC
+  `).all();
+  const ins = db.prepare(`
+    INSERT OR IGNORE INTO alpine_tours (name, summit, region, grade, height_m, protection, beta, lat, lng, created_by, created_at)
+    VALUES (@name,@summit,@region,@grade,@height_m,@protection,@beta,@lat,@lng,@created_by,@created_at)
+  `);
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      let d; try { d = JSON.parse(r.details_json); } catch { continue; }
+      const name = String(d.tour_name || "").trim();
+      if (!name) continue;
+      ins.run({
+        name, summit: d.summit || null, region: d.region || null, grade: r.grade || null,
+        height_m: d.height_m ?? null, protection: d.protection || null, beta: d.beta || null,
+        lat: d.lat ?? null, lng: d.lng ?? null, created_by: r.user_id, created_at: r.created_at
+      });
+    }
+  });
+  tx();
+} catch (e) { console.error("Alpine tour backfill failed:", e.message); }
+
 // Per-user IP log — admin-visible only, invisible to the user themselves
 db.exec(`
   CREATE TABLE IF NOT EXISTS user_ips (
@@ -911,6 +951,64 @@ app.get("/api/topo/crag/:id", requireAuth, (req, res) => {
   res.json({ crag, sectors: sectorList, looseRoutes });
 });
 
+// Alpine tours (shared) for the Topos
+app.get("/api/topo/tours", requireAuth, (req, res) => {
+  const tours = db.prepare(`
+    SELECT t.id, t.name, t.summit, t.region, t.grade, t.lat, t.lng,
+      (SELECT COUNT(DISTINCT l.user_id) FROM log_entries l
+        WHERE l.discipline='alpin' AND lower(json_extract(l.details_json,'$.tour_name'))=lower(t.name)) AS climbers
+    FROM alpine_tours t
+    ORDER BY t.name COLLATE NOCASE
+  `).all();
+  res.json({ tours });
+});
+
+app.get("/api/topo/tour/:id", requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Bad tour id" });
+  const tour = db.prepare("SELECT * FROM alpine_tours WHERE id=?").get(id);
+  if (!tour) return res.status(404).json({ error: "Tour not found" });
+
+  // All ascents of this tour (matched by tour name), earliest first → one row per climber
+  const rows = db.prepare(`
+    SELECT l.user_id, u.username, l.created_at
+    FROM log_entries l JOIN users u ON u.id = l.user_id
+    WHERE l.discipline='alpin' AND lower(json_extract(l.details_json,'$.tour_name'))=lower(?)
+    ORDER BY datetime(l.created_at) ASC
+  `).all(tour.name);
+  const seen = new Set();
+  const climbers = [];
+  for (const c of rows) {
+    if (seen.has(c.user_id)) continue;
+    seen.add(c.user_id);
+    climbers.push({ user_id: c.user_id, username: c.username, date: c.created_at });
+  }
+  res.json({ tour, climbers, first_logger_id: tour.created_by });
+});
+
+// Edit an alpine tour's shared info (crowdsourced; name is the immutable key)
+app.post("/api/topo/tour/:id", requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Bad tour id" });
+  const t = db.prepare("SELECT id FROM alpine_tours WHERE id=?").get(id);
+  if (!t) return res.status(404).json({ error: "Tour not found" });
+
+  const b = req.body;
+  const str = (v, m = 500) => (v == null ? null : String(v).slice(0, m)) || null;
+  const numI = (v) => (v === "" || v == null || isNaN(Number(v))) ? null : Math.max(0, Math.round(Number(v)));
+  const grade = UIAA_GRADES.includes(String(b.grade)) ? String(b.grade) : null;
+  const protection = ["trad", "bolt", "mixed"].includes(b.protection) ? b.protection : null;
+  let lat = null, lng = null;
+  const la = Number(b.lat), lo = Number(b.lng);
+  if (isFinite(la) && isFinite(lo) && la >= -90 && la <= 90 && lo >= -180 && lo <= 180) {
+    lat = Number(la.toFixed(6)); lng = Number(lo.toFixed(6));
+  }
+  db.prepare(`
+    UPDATE alpine_tours SET summit=?, region=?, grade=?, height_m=?, protection=?, beta=?, lat=?, lng=? WHERE id=?
+  `).run(str(b.summit, 120), str(b.region, 120), grade, numI(b.height_m), protection, str(b.beta, 2000), lat, lng, id);
+  res.json({ ok: true });
+});
+
 // -------------------- Logbook --------------------
 const VALID_ASCENT_STYLES = ["os", "flash", "rp", "pp", "tr"];
 
@@ -1040,6 +1138,21 @@ app.post("/api/log/me", requireAuth, (req, res) => {
     } catch (e) { console.error("GPX save failed:", e.message); }
   }
 
+  // Register the alpine tour as a shared entity (first logger becomes the creator).
+  // INSERT OR IGNORE keeps an existing tour's (possibly edited) info untouched.
+  if (discipline === "alpin" && details) {
+    try {
+      const d = JSON.parse(details);
+      const tname = String(d.tour_name || "").trim();
+      if (tname) {
+        db.prepare(`
+          INSERT OR IGNORE INTO alpine_tours (name, summit, region, grade, height_m, protection, beta, lat, lng, created_by)
+          VALUES (?,?,?,?,?,?,?,?,?,?)
+        `).run(tname, d.summit || null, d.region || null, g, d.height_m ?? null, d.protection || null, d.beta || null, d.lat ?? null, d.lng ?? null, userId);
+      }
+    } catch (e) {}
+  }
+
   res.json({ ok: true, id: info.lastInsertRowid });
 });
 
@@ -1057,7 +1170,7 @@ app.get("/api/log/:id/gpx", requireAuth, (req, res) => {
   res.download(file, det.gpx);
 });
 
-const LOG_SELECT = `
+const LOG_SELECT_BASE = `
   SELECT
     l.id, l.category, l.grade, l.count, l.notes, l.environment,
     l.ascent_style, l.attempts, l.created_at,
@@ -1069,18 +1182,21 @@ const LOG_SELECT = `
   LEFT JOIN routes r  ON r.id = l.route_id
   WHERE l.user_id=?
   ORDER BY datetime(l.created_at) DESC
-  LIMIT 50
 `;
+const LOG_SELECT = LOG_SELECT_BASE + " LIMIT 50";
+const LOG_SELECT_ALL = LOG_SELECT_BASE;
 
 app.get("/api/log/me", requireAuth, (req, res) => {
-  const rows = db.prepare(LOG_SELECT).all(currentUserId(req));
+  const sql = String(req.query.all) === "1" ? LOG_SELECT_ALL : LOG_SELECT;
+  const rows = db.prepare(sql).all(currentUserId(req));
   res.json({ entries: rows });
 });
 
 app.get("/api/log/user/:id", requireAuth, (req, res) => {
   const userId = Number(req.params.id);
   if (!Number.isInteger(userId)) return res.status(400).json({ error: "Bad user id" });
-  const rows = db.prepare(LOG_SELECT).all(userId);
+  const sql = String(req.query.all) === "1" ? LOG_SELECT_ALL : LOG_SELECT;
+  const rows = db.prepare(sql).all(userId);
   res.json({ entries: rows });
 });
 

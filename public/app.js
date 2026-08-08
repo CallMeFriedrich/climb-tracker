@@ -173,11 +173,11 @@ function showIntroModal() {
         <h2>Willkommen bei Climb Tracker! 🧗</h2>
         <p class="muted" style="margin-top:6px;">Kurz das Wichtigste:</p>
         <ul class="intro-list">
-          <li><strong>Eintragen:</strong> Logge Begehungen Schritt für Schritt — Indoor/Outdoor, Sport, Boulder, Alpin und <strong>Tension Board</strong>.</li>
-          <li><strong>Diese Woche:</strong> Ein wöchentliches Leaderboard bewertet deine Begehungen nach Schwierigkeit.</li>
-          <li><strong>Topos:</strong> Durchstöbere Klettergärten, Sektoren und Routen inkl. Karte.</li>
-          <li><strong>Dehn Streak:</strong> Optionaler täglicher Dehn-Streak mit Joker-System — im <em>Profil</em> aktivieren, täglich im Dashboard einchecken.</li>
-          <li><strong>Profil & Community:</strong> Ziele setzen, Aktivität sehen; Profile aller Nutzer sind einsehbar.</li>
+          <li>${t("<strong>Eintragen:</strong> Logge Begehungen Schritt für Schritt — Indoor/Outdoor, Sport, Boulder, Alpin und <strong>Tension Board</strong>.")}</li>
+          <li>${t("<strong>Diese Woche:</strong> Ein wöchentliches Leaderboard bewertet deine Begehungen nach Schwierigkeit.")}</li>
+          <li>${t("<strong>Topos:</strong> Durchstöbere Klettergärten, Sektoren und Routen inkl. Karte.")}</li>
+          <li>${t("<strong>Dehn Streak:</strong> Optionaler täglicher Dehn-Streak mit Joker-System — im <em>Profil</em> aktivieren, täglich im Dashboard einchecken.")}</li>
+          <li>${t("<strong>Profil & Community:</strong> Ziele setzen, Aktivität sehen; Profile aller Nutzer sind einsehbar.")}</li>
         </ul>
         <p class="muted" style="font-size:12px;">Deine Daten werden dauerhaft gespeichert.</p>
         <div class="modal-actions">
@@ -194,8 +194,8 @@ function showIntroModal() {
 function showPatchModal(notes) {
   const blocks = notes.map(n => `
     <div class="patch-block">
-      <div class="patch-head"><strong>${escapeHtml(n.title)}</strong> <span class="muted">${escapeHtml(n.date || "")}</span></div>
-      <ul class="intro-list">${(n.items || []).map(i => `<li>${escapeHtml(i)}</li>`).join("")}</ul>
+      <div class="patch-head"><strong>${escapeHtml(t(n.title))}</strong> <span class="muted">${escapeHtml(n.date || "")}</span></div>
+      <ul class="intro-list">${(n.items || []).map(i => `<li>${escapeHtml(t(i))}</li>`).join("")}</ul>
     </div>`).join("");
   const html = `
     <div class="modal-overlay" id="patchModal">
@@ -720,14 +720,16 @@ function initQuickLog() {
   // ---- Submit label ----
   function updateSubmitLabel() {
     if (!submitBtn) return;
+    const T = window.t || ((s) => s);
     const grade = gradeSelect ? gradeSelect.value : "";
-    const discLabel = discipline === "boulder" ? "Boulder"
+    const discLabel = T(discipline === "boulder" ? "Boulder"
       : discipline === "tensionboard" ? "Tension"
       : discipline === "alpin" ? "Alpin"
-      : (mode === "toprope" ? "Toprope" : "Sport");
+      : (mode === "toprope" ? "Toprope" : "Sport"));
+    const save = T("speichern");
     const stylePart = (discipline === "sport" && currentStyle) ? ` · ${currentStyle.toUpperCase()}` : "";
-    if (discipline === "alpin") { submitBtn.textContent = grade ? `Alpin ${grade} speichern` : "Tour speichern"; return; }
-    submitBtn.textContent = grade ? `${discLabel} ${grade}${stylePart} speichern` : `${discLabel} speichern`;
+    if (discipline === "alpin") { submitBtn.textContent = grade ? `${T("Alpin")} ${grade} ${save}` : T("Tour speichern"); return; }
+    submitBtn.textContent = grade ? `${discLabel} ${grade}${stylePart} ${save}` : `${discLabel} ${save}`;
   }
   gradeSelect?.addEventListener("change", updateSubmitLabel);
 
@@ -865,7 +867,7 @@ function renderStatusCard(me, leaderboardData, progressData) {
     </div>
     ${total > 0 ? `
       <div style="margin-top:10px;">
-        <div class="muted">${achieved} von ${total} Zielen erreicht</div>
+        <div class="muted">${(window.t || (s=>s))("{a} von {b} Zielen erreicht").replace("{a}", achieved).replace("{b}", total)}</div>
         <div class="progress-bar">
           <div class="progress-fill" style="width:${pct}%"></div>
         </div>
@@ -1272,7 +1274,7 @@ async function initProfile() {
 
   renderActivityGraph(activity);
   renderUserGoals(goals, doneMap);
-  renderUserLog(log, isSelf);
+  renderUserLog(log, isSelf, id);
 
   // Dehn Streak (own profile only)
   if (isSelf) initDehnStreak();
@@ -1578,7 +1580,7 @@ function renderUserGoals(goals, doneMap = {}) {
   `;
 }
 
-function renderUserLog(entries, isSelf) {
+function renderUserLog(entries, isSelf, userId) {
   const el = document.getElementById("log");
   if (!el) return;
 
@@ -1587,44 +1589,77 @@ function renderUserLog(entries, isSelf) {
     return;
   }
 
-  el.innerHTML = `<div class="log-cards">${entries.map(e => logCardHtml(e, isSelf)).join("")}</div>`;
-  wireAlpinDetails(el);
+  const LIMIT = 10;
+  const shown = entries.slice(0, LIMIT);
+  const more = entries.length > LIMIT;
+  const allBtn = (userId != null)
+    ? `<a class="btn btn-ghost" href="logs.html?id=${userId}" style="margin-top:12px;">Alle anzeigen →</a>`
+    : "";
 
-  if (isSelf) {
-    el.querySelectorAll(".btn-delete-entry").forEach(btn => {
-      let confirming = false;
-      let resetTimer = null;
-      btn.addEventListener("click", async () => {
-        if (!confirming) {
-          confirming = true;
-          btn.textContent = "Löschen?";
-          btn.classList.add("btn-delete-confirm");
-          resetTimer = setTimeout(() => {
-            confirming = false;
-            btn.textContent = "✕";
-            btn.classList.remove("btn-delete-confirm");
-          }, 3000);
-          return;
-        }
-        clearTimeout(resetTimer);
-        const id = btn.dataset.id;
-        const r = await api(`/api/log/me/${id}`, { method: "DELETE" });
-        if (r.ok) {
-          const card = el.querySelector(`.log-card[data-entry-id="${id}"]`);
-          const wrap = card ? card.closest(".log-card-wrap") : null;
-          if (wrap) wrap.remove(); else if (card) card.remove();
-          if (!el.querySelector(".log-card")) {
-            el.innerHTML = `<div class="empty">Keine Logbuch-Einträge.</div>`;
-          }
-        } else {
+  el.innerHTML = `<div class="log-cards">${shown.map(e => logCardHtml(e, isSelf)).join("")}</div>${more ? allBtn : ""}`;
+  wireAlpinDetails(el);
+  if (isSelf) wireLogDelete(el);
+}
+
+// Two-step delete wiring for log cards (own entries only)
+function wireLogDelete(el) {
+  el.querySelectorAll(".btn-delete-entry").forEach(btn => {
+    let confirming = false;
+    let resetTimer = null;
+    btn.addEventListener("click", async () => {
+      if (!confirming) {
+        confirming = true;
+        btn.textContent = "Löschen?";
+        btn.classList.add("btn-delete-confirm");
+        resetTimer = setTimeout(() => {
           confirming = false;
           btn.textContent = "✕";
           btn.classList.remove("btn-delete-confirm");
-          alert((await r.json()).error || "Fehler beim Löschen");
+        }, 3000);
+        return;
+      }
+      clearTimeout(resetTimer);
+      const id = btn.dataset.id;
+      const r = await api(`/api/log/me/${id}`, { method: "DELETE" });
+      if (r.ok) {
+        const card = el.querySelector(`.log-card[data-entry-id="${id}"]`);
+        const wrap = card ? card.closest(".log-card-wrap") : null;
+        if (wrap) wrap.remove(); else if (card) card.remove();
+        if (!el.querySelector(".log-card")) {
+          el.innerHTML = `<div class="empty">Keine Logbuch-Einträge.</div>`;
         }
-      });
+      } else {
+        confirming = false;
+        btn.textContent = "✕";
+        btn.classList.remove("btn-delete-confirm");
+        alert((await r.json()).error || "Fehler beim Löschen");
+      }
     });
-  }
+  });
+}
+
+// ---------- Full log page (all entries of a user; viewable by anyone) ----------
+async function initFullLog() {
+  const id = new URLSearchParams(location.search).get("id");
+  const el = document.getElementById("log");
+  if (!id || !el) return;
+
+  const me = (await (await api("/api/me")).json()).me;
+  const isSelf = me && String(me.id) === String(id);
+
+  let username = "";
+  try { username = (await (await api(`/api/profile/user/${id}`)).json()).user?.username || ""; } catch {}
+  const titleEl = document.getElementById("logTitle");
+  if (titleEl) titleEl.textContent = username ? `Logbuch: ${username}` : "Logbuch";
+
+  const entries = ((await (await api(`/api/log/user/${id}?all=1`)).json()).entries) || [];
+  const subEl = document.getElementById("logSub");
+  if (subEl) subEl.textContent = `${entries.length} ${entries.length === 1 ? "Eintrag" : "Einträge"} insgesamt`;
+
+  if (!entries.length) { el.innerHTML = `<div class="empty">Keine Logbuch-Einträge.</div>`; return; }
+  el.innerHTML = `<div class="log-cards">${entries.map(e => logCardHtml(e, isSelf)).join("")}</div>`;
+  wireAlpinDetails(el);
+  if (isSelf) wireLogDelete(el);
 }
 
 // ---------- Topo (browseable crag/sector/route directory) ----------
@@ -1633,8 +1668,11 @@ const TOPO_DISC_LABELS = { sport: "Klettergärten", boulder: "Boulder-Gebiete", 
 async function initTopo() {
   const root = document.getElementById("topoRoot");
   if (!root) return;
-  const cragId = new URLSearchParams(location.search).get("crag");
+  const params = new URLSearchParams(location.search);
+  const cragId = params.get("crag");
+  const tourId = params.get("tour");
   if (cragId) return initTopoDetail(root, cragId);
+  if (tourId) return initTopoTourDetail(root, tourId);
   return initTopoList(root);
 }
 
@@ -1642,26 +1680,30 @@ async function initTopoList(root) {
   root.innerHTML = `
     <div class="card">
       <h1>Topos</h1>
-      <p class="muted">Alle bekannten Klettergärten, Sektoren und Routen – inkl. Länge, Bemerkungen und Karte.</p>
+      <p class="muted">Alle bekannten Klettergärten, Sektoren, Routen und Alpin-Touren – inkl. Länge, Bemerkungen und Karte.</p>
       <div class="divider"></div>
-      <input id="topoSearch" placeholder="Klettergarten suchen…" autocomplete="off" />
+      <input id="topoSearch" placeholder="Suchen…" autocomplete="off" />
       <div id="topoGroups" style="margin-top:14px;">Lädt…</div>
     </div>`;
 
-  let crags = [];
+  let crags = [], tours = [];
   try { crags = (await (await api("/api/topo/crags")).json()).crags || []; } catch {}
+  try { tours = (await (await api("/api/topo/tours")).json()).tours || []; } catch {}
   const groupsEl = document.getElementById("topoGroups");
 
   function render(filter) {
     const f = (filter || "").trim().toLowerCase();
-    const shown = crags.filter(c => !f || c.name.toLowerCase().includes(f));
-    if (!shown.length) { groupsEl.innerHTML = `<div class="empty">Keine Klettergärten gefunden.</div>`; return; }
-    const order = ["sport", "boulder", "indoor", "alpin"];
-    groupsEl.innerHTML = order.filter(d => shown.some(c => c.discipline === d)).map(d => `
+    const shownCrags = crags.filter(c => !f || c.name.toLowerCase().includes(f));
+    const shownTours = tours.filter(t => !f || t.name.toLowerCase().includes(f)
+      || (t.region && t.region.toLowerCase().includes(f)));
+    if (!shownCrags.length && !shownTours.length) { groupsEl.innerHTML = `<div class="empty">Nichts gefunden.</div>`; return; }
+
+    const order = ["sport", "boulder", "indoor"];
+    let html = order.filter(d => shownCrags.some(c => c.discipline === d)).map(d => `
       <div style="margin-bottom:16px;">
         <div class="badge" style="margin-bottom:8px;">${TOPO_DISC_LABELS[d] || d}</div>
         <div class="user-list">
-          ${shown.filter(c => c.discipline === d).map(c => `
+          ${shownCrags.filter(c => c.discipline === d).map(c => `
             <a class="user-row" href="topo.html?crag=${c.id}">
               <div class="user-info">
                 <div class="user-name">${escapeHtml(c.name)} ${(c.lat != null && c.lng != null) ? '<span title="Position bekannt">📍</span>' : ''}</div>
@@ -1671,9 +1713,158 @@ async function initTopoList(root) {
             </a>`).join("")}
         </div>
       </div>`).join("");
+
+    if (shownTours.length) {
+      html += `
+        <div style="margin-bottom:16px;">
+          <div class="badge" style="margin-bottom:8px;">Alpin-Touren</div>
+          <div class="user-list">
+            ${shownTours.map(t => `
+              <a class="user-row" href="topo.html?tour=${t.id}">
+                <div class="user-info">
+                  <div class="user-name">${escapeHtml(t.name)} ${(t.lat != null && t.lng != null) ? '<span title="Position bekannt">📍</span>' : ''}</div>
+                  <div class="user-bio">${[t.grade ? escapeHtml(t.grade) : "", t.region ? escapeHtml(t.region) : "", `${t.climbers} Begeher`].filter(Boolean).join(" · ")}</div>
+                </div>
+                <span class="pill" style="flex-shrink:0">Ansehen →</span>
+              </a>`).join("")}
+          </div>
+        </div>`;
+    }
+    groupsEl.innerHTML = html;
   }
   render("");
   document.getElementById("topoSearch")?.addEventListener("input", e => render(e.target.value));
+}
+
+async function initTopoTourDetail(root, tourId) {
+  let data;
+  try { data = await (await api(`/api/topo/tour/${tourId}`)).json(); } catch {}
+  if (!data || !data.tour) {
+    root.innerHTML = `<div class="card"><a class="expand-link" href="topo.html">← Alle Topos</a><div class="empty" style="margin-top:12px;">Tour nicht gefunden.</div></div>`;
+    return;
+  }
+  const t = data.tour;
+  const PROT = { trad: "Trad / selbst absichern", bolt: "Bohrhaken", mixed: "Gemischt" };
+  const infoRow = (label, val) => val ? `<div class="ad-row"><span class="ad-key">${label}</span><span class="ad-val">${val}</span></div>` : "";
+
+  root.innerHTML = `
+    <div class="card" style="margin-bottom:12px;">
+      <a class="expand-link" href="topo.html">← Alle Topos</a>
+      <h1 style="margin-top:8px;">${escapeHtml(t.name)} <span class="badge">Alpin</span></h1>
+    </div>
+
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <h2>Infos</h2>
+        <button type="button" class="btn btn-ghost" id="tourEditBtn" style="width:auto;">Bearbeiten</button>
+      </div>
+      <div class="divider"></div>
+      <div id="tourInfoView">
+        ${[
+          infoRow("Gipfel", t.summit ? escapeHtml(t.summit) : ""),
+          infoRow("Region", t.region ? escapeHtml(t.region) : ""),
+          infoRow("Schwierigkeit", t.grade ? escapeHtml(t.grade) : ""),
+          infoRow("Höhenmeter", t.height_m ? `${t.height_m} hm` : ""),
+          infoRow("Absicherung", PROT[t.protection] || ""),
+        ].join("") || `<div class="muted">Noch keine Infos — mit „Bearbeiten" ergänzen.</div>`}
+        ${t.beta ? `<div class="ad-beta"><span class="ad-key">Beta</span><div>${escapeHtml(t.beta)}</div></div>` : ""}
+      </div>
+      <div id="tourInfoEdit" style="display:none;"></div>
+    </div>
+
+    ${(t.lat != null && t.lng != null) ? `
+    <div class="card" style="margin-bottom:12px;">
+      <h2>Position</h2>
+      <div class="divider"></div>
+      <div id="tourMap" class="alpin-map"></div>
+    </div>` : ""}
+
+    <div class="card">
+      <h2>Begehungen (${data.climbers.length})</h2>
+      <p class="muted">Wer diese Tour bereits eingetragen hat.</p>
+      <div class="divider"></div>
+      ${data.climbers.length ? `<div class="list">${data.climbers.map((c, i) => `
+        <a class="lb-row" href="profile.html?id=${c.user_id}">
+          <div class="lb-left">
+            <span class="lb-medal">${(c.user_id === data.first_logger_id) ? "🥇" : `<span class="lb-rank">${i + 1}</span>`}</span>
+            <span class="lb-name">${escapeHtml(c.username)}</span>
+            ${(c.user_id === data.first_logger_id) ? `<span class="lb-you">Ersteintrag</span>` : ""}
+          </div>
+          <span class="lb-stat muted">${fmtDate(c.date)}</span>
+        </a>`).join("")}</div>` : `<div class="empty">Noch keine Begehungen erfasst.</div>`}
+    </div>`;
+
+  if (t.lat != null && t.lng != null) {
+    const mapEl = document.getElementById("tourMap");
+    setTimeout(() => renderPinMap(mapEl, Number(t.lat), Number(t.lng)), 150);
+  }
+  setupTourEdit(t, tourId);
+}
+
+function setupTourEdit(t, tourId) {
+  const btn = document.getElementById("tourEditBtn");
+  const view = document.getElementById("tourInfoView");
+  const edit = document.getElementById("tourInfoEdit");
+  if (!btn) return;
+  const opt = (v, cur) => `<option value="${v}"${v === cur ? " selected" : ""}>${v}</option>`;
+  const protSel = (cur) => ["", "trad", "bolt", "mixed"].map(v =>
+    `<option value="${v}"${v === (cur || "") ? " selected" : ""}>${{ "": "—", trad: "Trad / selbst absichern", bolt: "Bohrhaken", mixed: "Gemischt" }[v]}</option>`).join("");
+
+  btn.addEventListener("click", () => {
+    const open = edit.style.display === "none";
+    if (!open) { edit.style.display = "none"; view.style.display = "block"; btn.textContent = "Bearbeiten"; return; }
+    view.style.display = "none"; edit.style.display = "block"; btn.textContent = "Schließen";
+    edit.innerHTML = `
+      <div class="form">
+        <div class="grid cols-2" style="gap:12px;">
+          <div class="field"><label>Gipfel</label><input id="teSummit" maxlength="120" value="${t.summit ? escapeHtml(t.summit) : ""}"></div>
+          <div class="field"><label>Region</label><input id="teRegion" maxlength="120" value="${t.region ? escapeHtml(t.region) : ""}"></div>
+          <div class="field"><label>UIAA-Schwierigkeit</label><select id="teGrade"><option value="">—</option>${UIAA_GRADES.map(g => opt(g, t.grade)).join("")}</select></div>
+          <div class="field"><label>Höhenmeter</label><input id="teHeight" type="number" min="0" inputmode="numeric" value="${t.height_m != null ? t.height_m : ""}"></div>
+        </div>
+        <div class="field"><label>Absicherung</label><select id="teProt">${protSel(t.protection)}</select></div>
+        <div class="field"><label>Beta</label><textarea id="teBeta" rows="3" maxlength="2000">${t.beta ? escapeHtml(t.beta) : ""}</textarea></div>
+        <div class="field">
+          <label>Position (auf die Karte tippen)</label>
+          <div id="teMap" class="alpin-map"></div>
+          <input type="hidden" id="teLat" value="${t.lat != null ? t.lat : ""}"><input type="hidden" id="teLng" value="${t.lng != null ? t.lng : ""}">
+        </div>
+        <button type="button" class="btn btn-primary" id="teSave">Speichern</button>
+      </div>`;
+    setupTourEditMap(t);
+    document.getElementById("teSave").addEventListener("click", async () => {
+      const body = {
+        summit: document.getElementById("teSummit").value,
+        region: document.getElementById("teRegion").value,
+        grade: document.getElementById("teGrade").value,
+        height_m: document.getElementById("teHeight").value,
+        protection: document.getElementById("teProt").value,
+        beta: document.getElementById("teBeta").value,
+        lat: document.getElementById("teLat").value || null,
+        lng: document.getElementById("teLng").value || null
+      };
+      const r = await api(`/api/topo/tour/${tourId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (r.ok) { alert("Gespeichert."); location.reload(); }
+      else alert((await r.json()).error || "Fehler");
+    });
+  });
+}
+
+function setupTourEditMap(t) {
+  const el = document.getElementById("teMap");
+  if (!el || typeof L === "undefined") { setTimeout(() => setupTourEditMap(t), 300); return; }
+  const start = (t.lat != null && t.lng != null) ? [t.lat, t.lng] : [47.0, 11.0];
+  const map = L.map(el).setView(start, (t.lat != null) ? 12 : 6);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(map);
+  let marker = (t.lat != null && t.lng != null) ? L.marker(start, { draggable: true }).addTo(map) : null;
+  const setLL = (ll) => { document.getElementById("teLat").value = ll.lat.toFixed(6); document.getElementById("teLng").value = ll.lng.toFixed(6); };
+  if (marker) marker.on("dragend", () => setLL(marker.getLatLng()));
+  map.on("click", (e) => {
+    if (!marker) { marker = L.marker(e.latlng, { draggable: true }).addTo(map); marker.on("dragend", () => setLL(marker.getLatLng())); }
+    else marker.setLatLng(e.latlng);
+    setLL(e.latlng);
+  });
+  setTimeout(() => map.invalidateSize(), 200);
 }
 
 async function initTopoDetail(root, cragId) {
