@@ -263,6 +263,19 @@ input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:f
 }
 ::placeholder{ color: var(--text-secondary); opacity: 0.6; }
 
+/* Inline form error (red, e.g. login) */
+.form-error{
+  display: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.form-error.show{ display: flex; }
+.form-error::before{ content: "⚠"; font-size: 14px; }
+
 /* ===== BUTTONS ===== */
 .btn{
   display: inline-flex;

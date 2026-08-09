@@ -35,6 +35,8 @@
     "optional": "optional", "Alle anzeigen →": "Show all →", "← Alle Topos": "← All topos",
     "Ansehen →": "View →", "Profil →": "Profile →", "Mehr Optionen": "More options", "Weniger Optionen": "Fewer options",
     "Lädt…": "Loading…", "Fehler": "Error", "Suchen…": "Search…", "Nichts gefunden.": "Nothing found.",
+    "Zu viele Login-Versuche. Bitte in ein paar Minuten erneut versuchen.": "Too many login attempts. Please try again in a few minutes.",
+    "Login fehlgeschlagen": "Login failed", "Falscher Benutzername oder falsches Passwort.": "Wrong username or password.",
     // Login / register
     "Willkommen zurück": "Welcome back",
     "Melde dich an, um Dashboard, Ziele und Community zu sehen.": "Log in to see your dashboard, goals and the community.",
@@ -181,6 +183,8 @@
     "optional": "opzionale", "Alle anzeigen →": "Mostra tutti →", "← Alle Topos": "← Tutti i topo",
     "Ansehen →": "Vedi →", "Profil →": "Profilo →", "Mehr Optionen": "Più opzioni", "Weniger Optionen": "Meno opzioni",
     "Lädt…": "Caricamento…", "Fehler": "Errore", "Suchen…": "Cerca…", "Nichts gefunden.": "Nessun risultato.",
+    "Zu viele Login-Versuche. Bitte in ein paar Minuten erneut versuchen.": "Troppi tentativi di accesso. Riprova tra qualche minuto.",
+    "Login fehlgeschlagen": "Accesso non riuscito", "Falscher Benutzername oder falsches Passwort.": "Nome utente o password errati.",
     "Willkommen zurück": "Bentornato",
     "Melde dich an, um Dashboard, Ziele und Community zu sehen.": "Accedi per vedere dashboard, obiettivi e community.",
     "Username": "Nome utente", "Passwort": "Password", "Eingeloggt bleiben (30 Tage)": "Resta connesso (30 giorni)",

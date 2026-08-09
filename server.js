@@ -366,6 +366,39 @@ function currentUserId(req) {
   return req.session.userId;
 }
 
+// -------------------- Login rate limiting (per IP, in-memory) --------------------
+// Small single-process app → a simple in-memory counter is enough. Counts FAILED
+// attempts per IP; too many within the window → temporary block. Success resets it.
+const LOGIN_MAX_FAILS = 8;                    // failed attempts allowed...
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;       // ...within this window, then blocked for it
+const loginAttempts = new Map();              // ip -> { fails, first, blockedUntil }
+
+function loginLimiter(req, res, next) {
+  const e = loginAttempts.get(clientIp(req));
+  const now = Date.now();
+  if (e && e.blockedUntil > now) {
+    res.set("Retry-After", String(Math.ceil((e.blockedUntil - now) / 1000)));
+    return res.status(429).json({ error: "Zu viele Login-Versuche. Bitte in ein paar Minuten erneut versuchen." });
+  }
+  next();
+}
+function loginFailed(ip) {
+  const now = Date.now();
+  let e = loginAttempts.get(ip);
+  if (!e || now - e.first > LOGIN_WINDOW_MS) e = { fails: 0, first: now, blockedUntil: 0 };
+  e.fails += 1;
+  if (e.fails >= LOGIN_MAX_FAILS) e.blockedUntil = now + LOGIN_WINDOW_MS;
+  loginAttempts.set(ip, e);
+}
+function loginSucceeded(ip) { loginAttempts.delete(ip); }
+// Periodic cleanup so the map can't grow unbounded
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of loginAttempts) {
+    if (e.blockedUntil <= now && now - e.first > LOGIN_WINDOW_MS) loginAttempts.delete(ip);
+  }
+}, 30 * 60 * 1000).unref();
+
 // -------------------- Auth API --------------------
 app.post("/api/register", async (req, res) => {
   const { username, password } = req.body;
@@ -385,15 +418,16 @@ app.post("/api/register", async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", loginLimiter, async (req, res) => {
   const { username, password, remember } = req.body;
+  const ip = clientIp(req);
   const user = db.prepare("SELECT id, password_hash FROM users WHERE username=?")
     .get(String(username));
-  if (!user) return res.status(401).json({ error: "Invalid credentials" });
+  if (!user) { loginFailed(ip); return res.status(401).json({ error: "Invalid credentials" }); }
   const ok = await bcrypt.compare(String(password), user.password_hash);
-  if (!ok) return res.status(401).json({ error: "Invalid credentials" });
+  if (!ok) { loginFailed(ip); return res.status(401).json({ error: "Invalid credentials" }); }
+  loginSucceeded(ip);
   req.session.userId = user.id;
-  const ip = clientIp(req);
   recordIp(user.id, ip);
   req.session.lastIp = ip;
   // "Eingeloggt bleiben": 30 Tage; sonst Session-Cookie (läuft beim Browser-Schließen ab)

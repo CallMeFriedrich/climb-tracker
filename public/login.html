@@ -42,6 +42,8 @@
                    autocomplete="current-password" required />
           </div>
 
+          <div id="loginError" class="form-error" role="alert"></div>
+
           <label class="remember-label">
             <input type="checkbox" id="remember" name="remember" value="1" checked />
             Eingeloggt bleiben (30 Tage)
@@ -56,18 +58,16 @@
         </form>
       </div>
 
-      <div class="card">
+    <div class="card">
         <h2>Info</h2>
         <p class="muted">
-          <strong>Bevor du dich registrierst:</strong> Climb Tracker speichert deine Einträge,
-          Ziele und Profildaten dauerhaft in einer Datenbank (auch nach Server-Neustarts).
+          <strong>Bevor du dich registrierst:</strong> Climb Tracker <strong>speichert</strong> deine Einträge, Ziele und Profildaten dauerhaft in einer Datenbank. Passwörter werden sicher gehasht und nie im Klartext gespeichert. Mit der Registrierung bzw. dem Erstellen eines Accounts <strong>stimmst du dieser Speicherung zu</strong>
         </p>
 
         <div class="divider"></div>
 
         <p class="muted">
-          Community: Deine Profildaten, Ziele und dein Logbuch sind für alle eingeloggten
-          Nutzer sichtbar. Mit dem Erstellen eines Accounts stimmst du der Speicherung zu.
+          <strong>Community-Sichtbarkeit:</strong> Jeder eingeloggte Nutzer kann die Profildaten, Ziele und Logbücher der anderen Nutzer einsehen.
         </p>
       </div>
     </div>
@@ -76,6 +76,9 @@
   <script>
     document.getElementById("f").addEventListener("submit", async (e) => {
       e.preventDefault();
+      const errEl = document.getElementById("loginError");
+      errEl.classList.remove("show");
+
       const fd = new FormData(e.target);
       // Checkbox ist nicht im FormData wenn unchecked — explizit setzen
       if (!document.getElementById("remember").checked) fd.set("remember", "0");
@@ -85,8 +88,14 @@
         body: new URLSearchParams(fd)
       });
 
-      if (r.ok) location.href = "index.html";
-      else alert((await r.json()).error || "Login fehlgeschlagen");
+      if (r.ok) { location.href = "index.html"; return; }
+
+      const data = await r.json().catch(() => ({}));
+      const T = window.t || ((s) => s);
+      errEl.textContent = r.status === 429
+        ? T(data.error || "Zu viele Login-Versuche. Bitte in ein paar Minuten erneut versuchen.")
+        : T("Falscher Benutzername oder falsches Passwort.");
+      errEl.classList.add("show");
     });
   </script>
 </body>
